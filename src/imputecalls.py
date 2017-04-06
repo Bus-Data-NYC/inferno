@@ -1,7 +1,12 @@
 #!/user/bin/env python
 import sys
+import os.path
 import MySQLdb
 import MySQLdb.cursors
+try:
+    import configparser
+except ImportError:
+    from six.moves import configparser
 
 '''
 Goal: from bustime positions, impute stop calls. Each output row should contain:
@@ -37,8 +42,8 @@ FROM positions p
         AND p.next_stop_id = st.stop_id
     )
 WHERE
-    vehicle_id = ?
-    AND p.timestamp_utc BETWEEN ? AND ?
+    vehicle_id = %s
+    AND p.timestamp_utc BETWEEN %s AND %s
 ORDER BY timestamp_utc
 """
 '''
@@ -69,6 +74,26 @@ output fields:
 '''
 
 
+def get_config(filename=None):
+    filename = os.path.expanduser(filename or "~/.my.cnf")
+    cp = configparser.ConfigParser()
+    with open(filename) as f:
+        try:
+            cp.read_file(f)
+        except AttributeError:
+            cp.readfp(f)
+
+        if cp.has_section('client'):
+            return {
+                "host": cp.get('client', 'host', fallback='localhost'),
+                "passwd": cp.get('client', 'password'),
+                "port": cp.get('client', 'port', fallback=3306),
+                "user": cp.get('client', 'user'),
+            }
+        else:
+            return {}
+
+
 def get_positions(cursor, vehicle_id, start, end):
     '''
     Compile list of positions for a vehicle, using a list of positions
@@ -94,12 +119,12 @@ def get_positions(cursor, vehicle_id, start, end):
                 position['next_stop'] != prev.get('next_stop') or
                 position['timestamp'] > prev.get('timestamp', 0) + MAX_TIME_BETWEEN_STOPS):
 
-            if filtered_positions[-1] != prev:
+            if len(filtered_positions) and filtered_positions[-1] != prev:
                 filtered_positions.append(prev)
 
             filtered_positions.append(position)
 
-        elif (position['dist_from_stop'] < STOP_THRESHOLD):
+        elif (position['dist_from_stop'] and position['dist_from_stop'] < STOP_THRESHOLD):
             filtered_positions.append(position)
 
         prev = position
@@ -126,23 +151,25 @@ def fetch_trips(cursor):
     pass
 
 
-def fetch_vehicles(cursor):
-    cursor.execute("SELECT DISTINCT vehicle_id FROM positions")
+def fetch_vehicles(cursor, start, end):
+    cursor.execute(
+        "SELECT DISTINCT vehicle_id FROM positions WHERE timestamp_utc BETWEEN %s AND %s",
+        (start, end)
+    )
     return [row['vehicle_id'] for row in cursor.fetchall()]
 
 
 def main(db_name, start_date, end_date, outfile):
     # connect to MySQL
-    source = MySQLdb.connect(db=db_name,
-                             cursorclass=MySQLdb.cursors.DictCursor,
-                             read_default_group="client")
+    config = get_config()
+    source = MySQLdb.connect(db=db_name, cursorclass=MySQLdb.cursors.DictCursor, **config)
 
     cursor = source.cursor()
 
-    sink = MySQLdb.connect(db=db_name)
+    sink = MySQLdb.connect(db=db_name, **config)
 
     # Get distinct vehicles from MySQL
-    vehicles = fetch_vehicles(cursor)
+    vehicles = fetch_vehicles(cursor, start_date, end_date)
 
     # Run query for every vehicle
     for vehicle_id in vehicles:
