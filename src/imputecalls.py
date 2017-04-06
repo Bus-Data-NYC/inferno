@@ -1,6 +1,7 @@
 #!/user/bin/env python
 import sys
 import os.path
+from collections import Counter
 import MySQLdb
 import MySQLdb.cursors
 try:
@@ -24,7 +25,6 @@ TRIP_INDEX_OFFSET = 0
 MAX_TRIP_INDEX = 178272  # TODO set dynamically
 STOP_TIMES_SIZE = 6994433  # TODO set dynamically
 
-
 VEHICLE_QUERY = """SELECT
     UNIX_TIMESTAMP(timestamp_utc) timestamp,
     progress,
@@ -46,6 +46,11 @@ WHERE
     AND p.timestamp_utc BETWEEN %s AND %s
 ORDER BY timestamp_utc
 """
+
+INSERT = """INSERT INTO calls
+    (vehicle_id, trip_index, stop_sequence, call_time, dwell_time, source, rds_index)
+    VALUES ({}, {}, %s, %s, %s, %s, {})"""
+
 '''
 +------------+----------+-------+--------------+------------------+----------------+---------+----------+
 | timestamp  | progress | trip  | next_stop_id | dist_along_route | dist_from_stop | pattern | stop_seq |
@@ -94,7 +99,7 @@ def get_config(filename=None):
             return {}
 
 
-def get_positions(cursor, vehicle_id, start, end):
+def filter_positions(cursor, vehicle_id, start, end):
     '''
     Compile list of positions for a vehicle, using a list of positions
     and filtering based on positions that reflect change in pattern or next_stop.
@@ -110,45 +115,43 @@ def get_positions(cursor, vehicle_id, start, end):
     # load up cursor with every position for vehicle
     cursor.execute(VEHICLE_QUERY, (vehicle_id, start, end))
 
-    filtered_positions = []
+    runs = []
     prev = {}
     position = cursor.fetchone()
 
     while position is not None:
         if (position['pattern'] != prev.get('pattern') or
-                position['next_stop'] != prev.get('next_stop') or
+                position['stop_sequence'] < prev.get('stop_sequence') or
                 position['timestamp'] > prev.get('timestamp', 0) + MAX_TIME_BETWEEN_STOPS):
 
-            if len(filtered_positions) and filtered_positions[-1] != prev:
-                filtered_positions.append(prev)
+            runs.append([])
 
-            filtered_positions.append(position)
+            # last position on previous run
+            if len(prev) and len(runs) > 1 and runs[-2][-1] != prev:
+                runs[-2].append(prev)
 
+            # first position on the new run
+            runs[-1].append(position)
+
+        # if we're approaching a stop
         elif (position['dist_from_stop'] and position['dist_from_stop'] < STOP_THRESHOLD):
-            filtered_positions.append(position)
+            # if we were approaching the same stop last time, remove that one
+            if (position['next_stop'] == runs[-1][-1].get('next_stop') and
+                    position['dist_from_stop'] < runs[-1][-1].get('dist_from_stop')):
+                runs[-1].pop()
+
+            # append the current stop
+            runs[-1].append(position)
+
+        elif position['next_stop'] != prev.get('next_stop'):
+            runs[-1].append(position)
 
         prev = position
         position = cursor.fetchone()
 
-    return filtered_positions
+    print((runs))
 
-
-def assign_trips(runs):
-    '''Ensure that each run has the same trip index (use the more'''
-    # TODO
     return runs
-
-
-def fetch_stop_times(cursor):
-    '''
-    Get first departure, arrival offset, departure offset, call_type.
-    from ref_stop_times sorted by trip index and stop sequence'''
-    pass
-
-
-def fetch_trips(cursor):
-    '''trip index, i from ref_stop_times'''
-    pass
 
 
 def fetch_vehicles(cursor, start, end):
@@ -159,11 +162,10 @@ def fetch_vehicles(cursor, start, end):
     return [row['vehicle_id'] for row in cursor.fetchall()]
 
 
-def main(db_name, start_date, end_date, outfile):
+def main(db_name, start_date, end_date):
     # connect to MySQL
     config = get_config()
     source = MySQLdb.connect(db=db_name, cursorclass=MySQLdb.cursors.DictCursor, **config)
-
     cursor = source.cursor()
 
     sink = MySQLdb.connect(db=db_name, **config)
@@ -173,18 +175,50 @@ def main(db_name, start_date, end_date, outfile):
 
     # Run query for every vehicle
     for vehicle_id in vehicles:
-        positions = get_positions(cursor, vehicle_id, start_date, end_date)
+        print(vehicle_id)
+        runs = filter_positions(cursor, vehicle_id, start_date, end_date)
 
-        print(vehicle_id, len(positions))
+        # each run will become a trip
+        for run in runs:
+            # list of calls to be written
+            # each call is a list of this format:
+            # [stop_sequence, call_time, dwell_time, source]
+            calls = []
 
-        # rather than loopting through positions, loop through stops on the trip, and use the positions to get info on that.
-        # Using positions, generate calls
-        # if (position['pattern'] != prev_position.get('pattern') or
-        #     position['stop_sequence'] < prev_position.get('stop_sequence') or
-        #     position['timestamp'] > prev_position.get('timestamp') + MAX_TIME_BETWEEN_STOPS
-        #     ):
-        #     pass
-        # Must refer to
+            # get the scheduled list of trips for this run
+            trip_index = Counter([x['trip'] for x in run]).most_common(1)
+            cursor.execute("SELECT * FROM ref_stop_times where trip_index = %s", (trip_index,))
+            trip_stops = cursor.fetchall()
+
+            # TODO extrapolate back to start of run
+            call_time = None
+            calls.append([trip_stops[0]['stop_sequence'], call_time, -2, 'S'])
+
+            for sched_stop in trip_stops[1:-1]:
+                # TODO 
+                if None:
+                    # get 2 positions that are on either side of this guy
+                    method = 'C'
+                    dwell_time = None
+                    call_time = None
+
+                # TODO
+                else:
+                    # if there aren't any, interpolate between surrounding stops
+                    method = 'I'
+                    dwell_time = None
+                    call_time = None
+
+                calls.append([sched_stop['stop_sequence'], call_time, dwell_time, method])
+
+            # TODO extrapolate to end of run
+            call_time = None
+            calls.append([trip_stops[-1]['stop_sequence'], call_time, -1, 'E'])
+
+            # write calls to sink
+            insert = INSERT.format(vehicle_id, trip_index, trip_stops[0]['rds_index'])
+            sink.cursor().executemany(insert, calls)
+            sink.cursor().commit()
 
 
 if __name__ == '__main__':
