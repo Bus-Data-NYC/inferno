@@ -1,0 +1,6 @@
+*.o
+*.xz
+*.zip
+*.bin
+mytransit
+*.tsv
