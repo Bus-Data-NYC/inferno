@@ -77,7 +77,7 @@ def get_config(filename=None):
             return {
                 "host": cp.get('client', 'host'),
                 "passwd": cp.get('client', 'password'),
-                "port": cp.get('client', 'port'),
+                "port": cp.getint('client', 'port'),
                 "user": cp.get('client', 'user'),
             }
         else:
