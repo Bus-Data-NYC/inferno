@@ -162,7 +162,7 @@ def filter_positions(cursor, vehicle_id, date):
 
 def fetch_vehicles(cursor, date):
     # TODO remove debugging
-    cursor.execute("""SELECT vehicle_id FROM positions
+    cursor.execute("""SELECT distinct vehicle_id FROM positions
         WHERE service_date = %s and vehicle_id = 6677""", (date,))
     return [row['vehicle_id'] for row in cursor.fetchall()]
 
