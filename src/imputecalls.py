@@ -34,7 +34,7 @@ VEHICLE_QUERY = """SELECT
     dist_from_stop,
     pattern_id pattern,
     dist_along_route,
-    stop_sequence,
+    stop_sequence
 FROM positions p
     INNER JOIN ref_trips rt ON (rt.trip_id = p.trip_id)
     INNER JOIN ref_trip_patterns tp ON (rt.trip_index = tp.trip_index)
@@ -190,6 +190,8 @@ def generate_calls(run, stoptimes):
     # [rds_index, stop_sequence, call_time, source]
     calls = []
 
+    dictwriter = csv.DictWriter(sys.stderr, ['arrival', 'stop_sequence', 'next_stop', 'dist_from_stop'])
+
     # pairwise iteration: scheduled stoptime and next scheduled stoptime
     for stoptime, next_stoptime in pairwise(stoptimes):
         method = None
@@ -235,7 +237,17 @@ def generate_calls(run, stoptimes):
         if stoptime['stop_sequence'] in recorded_stops:
             continue
 
-        # TODO
+        # Otherwise, we must do more imputing!
+        raise ValueError("need to do more imputing")
+
+    # DEBUG
+    dictwriter.writerows([[
+        {
+            'arrival': c['arrival'],
+            'stop_sequence': c['stop_sequence'],
+            'next_stop': c['next_stop'],
+            'dist_from_stop': c['dist_from_stop']
+            } for c in call] for call in calls])
 
     return calls
 
@@ -250,9 +262,11 @@ def main(db_name, date):
     # Get distinct vehicles from MySQL
     vehicles = fetch_vehicles(cursor, date)
 
+    import csv
+    writer = csv.writer(sys.stderr)
+
     # Run query for every vehicle (returns list in memory)
     for vehicle_id in vehicles:
-        print(vehicle_id)
         # returns list in memory
         runs = filter_positions(cursor, vehicle_id, date)
 
@@ -268,9 +282,9 @@ def main(db_name, date):
             calls = generate_calls(run, cursor.fetchall())
 
             # write calls to sink
-            insert = INSERT.format(vehicle_id, trip_index)
-            sink.executemany(insert, calls)
-            sink.commit()
+            # insert = INSERT.format(vehicle_id, trip_index)
+            # sink.executemany(insert, calls)
+            # sink.commit()
 
 
 if __name__ == '__main__':
