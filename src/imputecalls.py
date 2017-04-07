@@ -1,4 +1,5 @@
 #!/user/bin/env python
+from __future__ import division
 import sys
 import os.path
 from datetime import timedelta
@@ -26,6 +27,7 @@ STOP_THRESHOLD = 30.48
 
 VEHICLE_QUERY = """SELECT
     CONVERT_TZ(p.timestamp_utc, 'UTC', 'EST') AS arrival,
+    st.arrival_time scheduled_time,
     rt.trip_index trip,
     next_stop_id next_stop,
     dist_from_stop,
@@ -132,17 +134,21 @@ def filter_positions(cursor, vehicle_id, date):
 
         # If patterns differ, stop sequence goes down, or half an hour passed
         if (position['pattern'] != prev.get('pattern') or
-                position['stop_sequence'] < prev.get('stop_sequence') or
+                (position['stop_sequence'] or -2) < prev.get('stop_sequence', -1) or
                 position['arrival'] > prev.get('arrival') + MAX_TIME_BETWEEN_STOPS):
 
             # start a new run
             runs.append([])
 
             # add last position to previous run
+            # and information about current arrival
             if len(prev) and len(runs) > 1 and runs[-2][-1] != prev:
+                prev['next'] = position
                 runs[-2].append(prev)
 
             # add current position to the new run
+            # and information about previous arrival
+            position['previous'] = prev
             runs[-1].append(position)
 
         # if we're approaching a stop
@@ -175,51 +181,56 @@ def filter_positions(cursor, vehicle_id, date):
 
 
 def fetch_vehicles(cursor, date):
-    cursor.execute("SELECT vehicle_id FROM positions WHERE service_date = %s and vehicle_id=6677 order by rand() limit 1", (date,))
+    # TODO remove debugging
+    cursor.execute("""SELECT vehicle_id FROM positions
+        WHERE service_date = %s and vehicle_id = 6677""", (date,))
     return [row['vehicle_id'] for row in cursor.fetchall()]
 
 
-def interpolate(calls, run, stoptimes):
+def get_last_before(sequence, terminating_sequence):
+    '''Get the last position in a sequence where stop_sequence is <= the terminating_seq'''
+    try:
+        i, position = [(i, p) for i, p in sequence
+            if p['stop_sequence'] <= terminating_sequence].pop()
+    except IndexError:
+        i, position = -1, {}
+
+    return i, position
+
+
+def interpolate(calls, run, stoptimesdict):
     # use groupby to work on groups that need interpolating
     for m, grouper in groupby(calls, lambda x: x[2]):
         if m != 'I':
             continue
 
         group = list(grouper)
-
-        # Check if needs extrapolation for beginning and end of trip
-        if group[0]['stop_sequence'] == 1:
-            # TODO extrapolate back to start
-            # for x in group[::-1]:
-            #     calls.insert(0, [stoptimes[0]['stop_sequence'], call_time, -2, 'S'])
-            print('skipping extrapolate to start')
-            continue
-
-        elif group[-1]['stop_sequence'] == stoptimes[-1]['stop_sequence']:
-            # TODO extrapolate forward to end
-            # for x in group:
-                # calls.append([stoptimes[-1]['stop_sequence'], call_time, -1, 'E'])
-            print('skipping extrapolate to end')
-            continue
-
-        group_duration = (group[-1]['time'] - group[0]['time']).total_seconds()
-
-        if group_duration > 30 * 60:
+        if (group[-1]['time'] - group[0]['time']).total_seconds() > 30 * 60:
             # skipping if more than a 30-minute gap
             continue
 
-        last_before = [
-            p for i, p in run if p['stop_sequence'] <= group[0]['stop_sequence']
-        ].pop()
-        first_after = [
-            p for i, p in run if p['stop_sequence'] > group[-1]['stop_sequence']
-        ].pop(0)
+        _, last_before = get_last_before(run, group[0]['stop_sequence'])
 
-        elapsed = first_after['arrival'] - last_before['departure']
-        time_fraction = elapsed / len(group)
+        if not last_before:
+            continue
 
-        for index, call in enumerate(group):
-            calls.index(call)[1] = last_before['departure'] + time_fraction * index
+        try:
+            first_after = [
+                p for _, p in run if p['stop_sequence'] > group[-1]['stop_sequence']
+            ].pop(0)
+        except IndexError:
+            continue
+
+        elapsed = (first_after['arrival'] - last_before['departure']).total_seconds()
+
+        s2 = first_after['stop_sequence']
+        s1 = last_before['stop_sequence']
+        sched_elapsed = (stoptimesdict[s2]['time'] - stoptimesdict[s1]['time']).total_seconds()
+
+        for call in group:
+            # Calls have format:
+            # [stop_sequence, call_time, source]
+            calls.index(call)[1] = last_before['departure'] + (sched_elapsed / elapsed) * (call[0] - s1)
 
     return calls
 
@@ -237,7 +248,7 @@ def main(db_name, date):
 
     import csv
     writer = csv.writer(sys.stderr)
-    dictwriter = csv.DictWriter(sys.stderr, ['a', 'arrival', 'departure', 'trip', 'pattern', 'stop_sequence', 'next_stop', 'dist_from_stop', 'dist_along_route'])
+    dictwriter = csv.DictWriter(sys.stderr, ['arrival', 'departure', 'trip', 'pattern', 'stop_sequence', 'next_stop', 'dist_from_stop', 'dist_along_route'])
 
     # Run query for every vehicle (returns list in memory)
     for vehicle_id in vehicles:
@@ -263,17 +274,11 @@ def main(db_name, date):
             # pairwise iteration: scheduled stoptime and next scheduled stoptime
             for stoptime, next_stoptime in pairwise(stoptimes):
                 try:
-                    i, last_before = [
-                        (i, p) for i, p in run if p['stop_sequence'] <= stoptime['stop_sequence']
-                    ].pop()
-
+                    i, last_before = get_last_before(run, stoptime['stop_sequence'])
                     _, first_after = run[1 + i]
 
                 except IndexError:
                     continue
-
-                dictwriter.writerow(dict(last_before.items() + [('a', 'A')]))
-                dictwriter.writerow(dict(first_after.items() + [('a', 'B')]))
 
                 # got positions that are on either side of this guy
                 if (last_before['next_stop'] == stoptime['id'] and
@@ -292,7 +297,25 @@ def main(db_name, date):
                 calls.append([stoptime['stop_sequence'], call_time, method])
 
             if needs_interpolation is True:
-                calls = interpolate(calls, run, stoptimes)
+                stoptimesdict = {s['stop_sequence']: s for s in stoptimes}
+                calls = interpolate(calls, run, stoptimesdict)
+
+            # # Check if needs extrapolation for beginning and end of trip
+            # if group[0]['stop_sequence'] == 1:
+            #     first_after
+            #     # TODO extrapolate back to start
+            #     for x in group[::-1]:
+            #         calls.insert(0, [stoptimes[0]['stop_sequence'], call_time, -2, 'S'])
+            #     print('skipping extrapolate to start')
+            #     continue
+
+            # elif group[-1]['stop_sequence'] == max(stoptimesdict.keys()):
+            #     # TODO extrapolate forward to end
+            #     # for x in group:
+            #         # calls.append([stoptimes[-1]['stop_sequence'], call_time, -1, 'E'])
+            #     print('skipping extrapolate to end')
+            #     continue
+
 
             # write calls to sink
             writer.writerows(calls)
