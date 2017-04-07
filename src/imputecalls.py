@@ -1,10 +1,11 @@
 #!/user/bin/env python
 from __future__ import division
 import sys
+import csv # DEBUG
 import os.path
-from datetime import timedelta
+from datetime import datetime, timedelta
 from collections import Counter
-from itertools import groupby, izip, tee
+from itertools import izip, tee
 import MySQLdb
 import MySQLdb.cursors
 try:
@@ -192,9 +193,8 @@ def generate_calls(run, stoptimes):
         stoptimes: list of scheduled stoptimes for this trip
     '''
     # each call is a list of this format:
-    # [rds_index, stop_sequence, call_time, source]
+    # [rds_index, stop_sequence, datetime, source]
     calls = []
-
     dictwriter = csv.DictWriter(sys.stderr, ['arrival', 'stop_sequence', 'next_stop', 'dist_from_stop'])
 
     # pairwise iteration: scheduled stoptime and next scheduled stoptime
@@ -210,7 +210,11 @@ def generate_calls(run, stoptimes):
                 i = -1
                 method = 'S'
             except AttributeError:
-                continue
+                # if first, assume it left on time
+                if stoptime['stop_sequence'] == 1:
+                    call_time = datetime.combine(run[0]['arrival'].date(), stoptime['time'])
+                    calls.append([stoptime['rds_index'], 1, call_time, 'S'])
+                    continue
 
         try:
             _, first_after = run[i + 1]
@@ -220,7 +224,7 @@ def generate_calls(run, stoptimes):
                 first_after = run[-1]['next']
                 method = 'E'
             except AttributeError:
-                continue
+                pass
 
         # got positions that are on either side of this guy
         if (last_before['next_stop'] == stoptime['id'] and
@@ -242,8 +246,8 @@ def generate_calls(run, stoptimes):
         if stoptime['stop_sequence'] in recorded_stops:
             continue
 
-        # Otherwise, we must do more imputing!
-        raise ValueError("need to do more imputing")
+        # End the trip
+        
 
     # DEBUG
     dictwriter.writerows([[
@@ -267,7 +271,6 @@ def main(db_name, date):
     # Get distinct vehicles from MySQL
     vehicles = fetch_vehicles(cursor, date)
 
-    import csv
     writer = csv.writer(sys.stderr)
 
     # Run query for every vehicle (returns list in memory)
