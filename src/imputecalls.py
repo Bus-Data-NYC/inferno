@@ -1,6 +1,7 @@
 #!/user/bin/env python
 import sys
 import os.path
+from datetime import timedelta
 from collections import Counter
 from itertools import groupby, izip, tee
 import MySQLdb
@@ -16,7 +17,7 @@ vehicle_id, trip_index, stop_sequence, arrival_time, departure_time, source (??)
 '''
 
 # Maximum elapsed time between positions before we declare a new run
-MAX_TIME_BETWEEN_STOPS = 60 * 30
+MAX_TIME_BETWEEN_STOPS = timedelta(seconds=60 * 30)
 
 # when dist_from_stop < 3048 cm (100 feet) considered "at stop" by MTA --NJ
 # this is not correct! It's only that the sign displays "at stop"
@@ -24,14 +25,13 @@ MAX_TIME_BETWEEN_STOPS = 60 * 30
 STOP_THRESHOLD = 30.48
 
 VEHICLE_QUERY = """SELECT
-    CONVERT_TZ(p.timestamp_utc, 'UTC', 'EST') AS datetime,
-    progress,
+    CONVERT_TZ(p.timestamp_utc, 'UTC', 'EST') AS arrival,
     rt.trip_index trip,
     next_stop_id next_stop,
     dist_from_stop,
     pattern_id pattern,
-    dist_along_route
-
+    dist_along_route,
+    stop_sequence
 FROM positions p
     INNER JOIN ref_trips rt ON (rt.trip_id = p.trip_id)
     INNER JOIN ref_trip_patterns tp ON (rt.trip_index = tp.trip_index)
@@ -103,6 +103,10 @@ def get_config(filename=None):
             return {}
 
 
+def common(lis):
+    return Counter(lis).most_common(1)[0][0]
+
+
 def filter_positions(cursor, vehicle_id, date):
     '''
     Compile list of positions for a vehicle, using a list of positions
@@ -124,12 +128,12 @@ def filter_positions(cursor, vehicle_id, date):
     position = cursor.fetchone()
 
     while position is not None:
-        position['departure'] = position['datetime']
+        position['departure'] = position['arrival']
 
         # If patterns differ, stop sequence goes down, or half an hour passed
         if (position['pattern'] != prev.get('pattern') or
                 position['stop_sequence'] < prev.get('stop_sequence') or
-                position['datetime'] > prev.get('datetime') + MAX_TIME_BETWEEN_STOPS):
+                position['arrival'] > prev.get('arrival') + MAX_TIME_BETWEEN_STOPS):
 
             # start a new run
             runs.append([])
@@ -162,7 +166,7 @@ def filter_positions(cursor, vehicle_id, date):
         # If the bus didn't move, update departure time
         if (position['dist_from_stop'] == prev.get('dist_from_stop') and
                 position['next_stop'] == prev.get('next_stop')):
-            prev['departure'] = position['departure']
+            prev['departure'] = position['arrival']
 
         prev = position
         position = cursor.fetchone()
@@ -171,16 +175,53 @@ def filter_positions(cursor, vehicle_id, date):
 
 
 def fetch_vehicles(cursor, date):
-    cursor.execute("SELECT DISTINCT vehicle_id FROM positions WHERE service_date = %s", (date,))
+    cursor.execute("SELECT vehicle_id FROM positions WHERE service_date = %s and vehicle_id=6677 order by rand() limit 1", (date,))
     return [row['vehicle_id'] for row in cursor.fetchall()]
 
 
-def extrapolate_back(stops, positions):
-    return 1
+def interpolate(calls, run, stoptimes):
+    # use groupby to work on groups that need interpolating
+    for m, grouper in groupby(calls, lambda x: x[2]):
+        if m != 'I':
+            continue
 
+        group = list(grouper)
 
-def extrapolate_forward(stops, positions):
-    return 1
+        # Check if needs extrapolation for beginning and end of trip
+        if group[0]['stop_sequence'] == 1:
+            # TODO extrapolate back to start
+            # for x in group[::-1]:
+            #     calls.insert(0, [stoptimes[0]['stop_sequence'], call_time, -2, 'S'])
+            print('skipping extrapolate to start')
+            continue
+
+        elif group[-1]['stop_sequence'] == stoptimes[-1]['stop_sequence']:
+            # TODO extrapolate forward to end
+            # for x in group:
+                # calls.append([stoptimes[-1]['stop_sequence'], call_time, -1, 'E'])
+            print('skipping extrapolate to end')
+            continue
+
+        group_duration = (group[-1]['time'] - group[0]['time']).total_seconds()
+
+        if group_duration > 30 * 60:
+            # skipping if more than a 30-minute gap
+            continue
+
+        last_before = [
+            p for i, p in run if p['stop_sequence'] <= group[0]['stop_sequence']
+        ].pop()
+        first_after = [
+            p for i, p in run if p['stop_sequence'] > group[-1]['stop_sequence']
+        ].pop(0)
+
+        elapsed = first_after['arrival'] - last_before['departure']
+        time_fraction = elapsed / len(group)
+
+        for index, call in enumerate(group):
+            calls.index(call)[1] = last_before['departure'] + time_fraction * index
+
+    return calls
 
 
 def main(db_name, date):
@@ -194,33 +235,33 @@ def main(db_name, date):
     # Get distinct vehicles from MySQL
     vehicles = fetch_vehicles(cursor, date)
 
-    # Run query for every vehicle
+    import csv
+    writer = csv.writer(sys.stderr)
+    dictwriter = csv.DictWriter(sys.stderr, ['a', 'arrival', 'departure', 'trip', 'pattern', 'stop_sequence', 'next_stop', 'dist_from_stop', 'dist_along_route'])
+
+    # Run query for every vehicle (returns list in memory)
     for vehicle_id in vehicles:
         print(vehicle_id)
+        # returns list in memory
         runs = filter_positions(cursor, vehicle_id, date)
 
         # each run will become a trip
         for run in runs:
             # list of calls to be written
             # each call is a list of this format:
-            # [stop_sequence, call_time, dwell_time, source]
+            # [stop_sequence, call_time, source]
             calls = []
+            run = list(run)
 
             # get the scheduled list of trips for this run
-            trip_index = Counter([x['trip'] for x in run]).most_common(1)
-            cursor.execute(
-                """SELECT stop_id id, rds_index, stop_sequence
-                FROM ref_stop_times WHERE trip_index = %s""",
-                (trip_index,)
-            )
-            trip_stops = cursor.fetchall()
+            trip_index = common([x[1]['trip'] for x in run])
+            cursor.execute("""SELECT stop_id id, arrival_time AS time, rds_index, stop_sequence
+                FROM ref_stop_times WHERE trip_index = %s""", (trip_index,))
+            stoptimes = cursor.fetchall()
 
-            call_time = extrapolate_back(trip_stops, run)
-            calls.append([trip_stops[0]['stop_sequence'], call_time, -2, 'S'])
-
+            needs_interpolation = False
             # pairwise iteration: scheduled stoptime and next scheduled stoptime
-            for stoptime, next_stoptime in pairwise(trip_stops[1:]):
-
+            for stoptime, next_stoptime in pairwise(stoptimes):
                 try:
                     i, last_before = [
                         (i, p) for i, p in run if p['stop_sequence'] <= stoptime['stop_sequence']
@@ -231,9 +272,12 @@ def main(db_name, date):
                 except IndexError:
                     continue
 
+                dictwriter.writerow(dict(last_before.items() + [('a', 'A')]))
+                dictwriter.writerow(dict(first_after.items() + [('a', 'B')]))
+
                 # got positions that are on either side of this guy
-                if (last_before['next_stop'] == stoptime['stop_index'] and
-                        first_after['next_stop'] == next_stoptime['stop_index']):
+                if (last_before['next_stop'] == stoptime['id'] and
+                        first_after['next_stop'] == next_stoptime['id']):
 
                     method = 'C'
                     elapsed = first_after['arrival'] - last_before['departure']
@@ -241,26 +285,20 @@ def main(db_name, date):
 
                 # if there aren't any, we'll interpolate between surrounding stops
                 else:
+                    needs_interpolation = True
                     method = 'I'
                     call_time = None
 
                 calls.append([stoptime['stop_sequence'], call_time, method])
 
-            # use groupby to work on groups that need interpolating
-            for m, grouper in groupby(calls, lambda x: x[2]):
-                if m != 'I':
-                    continue
-
-                group = list(grouper)
-
-            # TODO extrapolate to end of run
-            call_time = extrapolate_forward(trip_stops, run)
-            calls.append([trip_stops[-1]['stop_sequence'], call_time, -1, 'E'])
+            if needs_interpolation is True:
+                calls = interpolate(calls, run, stoptimes)
 
             # write calls to sink
-            insert = INSERT.format(vehicle_id, trip_index, trip_stops[0]['rds_index'])
-            sink.cursor().executemany(insert, calls)
-            sink.cursor().commit()
+            writer.writerows(calls)
+            # insert = INSERT.format(vehicle_id, trip_index, stoptimes[0]['rds_index'])
+            # sink.cursor().executemany(insert, calls)
+            # sink.cursor().commit()
 
 
 if __name__ == '__main__':
