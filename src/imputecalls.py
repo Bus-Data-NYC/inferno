@@ -54,9 +54,10 @@ INSERT = """INSERT INTO calls
 
 DEFAULT_LOGIN = {
     'host': 'localhost',
-    'port': 3306,
+    'port': '3306',
     'user': 'ec2-user'
 }
+
 
 def pairwise(iterable):
     "s -> (s0,s1), (s1,s2), (s2, s3), ..."
@@ -78,7 +79,7 @@ def get_config(filename=None):
             return {
                 "host": cp.get('client', 'host'),
                 "passwd": cp.get('client', 'password'),
-                "port": cp.getint('client', 'port'),
+                "port": int(cp.get('client', 'port')),
                 "user": cp.get('client', 'user'),
             }
         else:
@@ -158,7 +159,7 @@ def filter_positions(cursor, vehicle_id, date):
         prev = position
         position = cursor.fetchone()
 
-    return [enumerate(run) for run in runs]
+    return runs
 
 
 def fetch_vehicles(cursor, date):
@@ -171,7 +172,7 @@ def fetch_vehicles(cursor, date):
 def get_last_before(sequence, stop_number):
     '''Get the last position in a sequence where stop_sequence is <= the stop_number'''
     # This will raise an IndexError if something goes wrong
-    i, position = [(i, p) for i, p in sequence
+    i, position = [(i, p) for i, p in enumerate(sequence)
                    if p['stop_sequence'] <= stop_number].pop()
 
     return i, position
@@ -181,8 +182,8 @@ def interpolate(stop_number, last_before, first_after):
     '''Interpolate the particular (missing) stop number between the two positions'''
     elapsed = (first_after['arrival'] - last_before['departure']).total_seconds()
     sched_elapsed = (first_after['scheduled_time'] - last_before['scheduled_time']).total_seconds()
-
-    return last_before['departure'] + (sched_elapsed / elapsed) * (stop_number - last_before['stop_sequence'])
+    delta = timedelta(seconds=(sched_elapsed / elapsed) * (stop_number - last_before['stop_sequence']))
+    return last_before['departure'] + delta
 
 
 def generate_calls(run, stoptimes):
@@ -195,7 +196,7 @@ def generate_calls(run, stoptimes):
     # each call is a list of this format:
     # [rds_index, stop_sequence, datetime, source]
     calls = []
-    dictwriter = csv.DictWriter(sys.stderr, ['arrival', 'stop_sequence', 'next_stop', 'dist_from_stop'])
+    dictwriter = csv.DictWriter(sys.stderr, ['arrival', 'stop_sequence', 'next_stop', 'dist_from_stop'], delimiter='\t')
 
     # pairwise iteration: scheduled stoptime and next scheduled stoptime
     for stoptime, next_stoptime in pairwise(stoptimes):
@@ -209,30 +210,29 @@ def generate_calls(run, stoptimes):
                 last_before = run[0]['prev']
                 i = -1
                 method = 'S'
-            except AttributeError:
+            except KeyError:
                 # if first, assume it left on time
                 if stoptime['stop_sequence'] == 1:
-                    call_time = datetime.combine(run[0]['arrival'].date(), stoptime['time'])
+                    call_time = run[0]['arrival'].date() + stoptime['time']
                     calls.append([stoptime['rds_index'], 1, call_time, 'S'])
-                    continue
+                continue
 
         try:
-            _, first_after = run[i + 1]
+            first_after = run[i + 1]
         except IndexError:
             try:
                 # use the next position as a phantom (n+1)th call
                 first_after = run[-1]['next']
                 method = 'E'
-            except AttributeError:
-                pass
+            except KeyError:
+                continue
 
         # got positions that are on either side of this guy
         if (last_before['next_stop'] == stoptime['id'] and
                 first_after['next_stop'] == next_stoptime['id']):
-
             method = 'C'
             elapsed = first_after['arrival'] - last_before['departure']
-            call_time = last_before['departure'] + elapsed / 2
+            call_time = last_before['departure'] + timedelta(seconds=elapsed.total_seconds() / 2)
 
         # if there aren't any, we'll interpolate between surrounding stops
         else:
@@ -248,15 +248,14 @@ def generate_calls(run, stoptimes):
 
         # End the trip
         
-
     # DEBUG
-    dictwriter.writerows([[
+    dictwriter.writerows([
         {
             'arrival': c['arrival'],
             'stop_sequence': c['stop_sequence'],
             'next_stop': c['next_stop'],
             'dist_from_stop': c['dist_from_stop']
-            } for c in call] for call in calls])
+            } for c in run])
 
     return calls
 
@@ -271,7 +270,7 @@ def main(db_name, date):
     # Get distinct vehicles from MySQL
     vehicles = fetch_vehicles(cursor, date)
 
-    writer = csv.writer(sys.stderr)
+    writer = csv.writer(sys.stderr,delimiter='\t')
 
     # Run query for every vehicle (returns list in memory)
     for vehicle_id in vehicles:
@@ -280,15 +279,14 @@ def main(db_name, date):
 
         # each run will become a trip
         for run in runs:
-            run = list(run)
-
             # get the scheduled list of trips for this run
-            trip_index = common([x[1]['trip'] for x in run])
+            trip_index = common([x['trip'] for x in run])
             cursor.execute("""SELECT stop_id id, arrival_time AS time, rds_index, stop_sequence
                 FROM ref_stop_times WHERE trip_index = %s""", (trip_index,))
 
             calls = generate_calls(run, cursor.fetchall())
 
+            writer.writerows(calls)
             # write calls to sink
             # insert = INSERT.format(vehicle_id, trip_index)
             # sink.executemany(insert, calls)
