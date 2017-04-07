@@ -4,7 +4,9 @@ MYSQLFLAGS =
 DATABASE = nycbus
 MYSQL = mysql $(DATABASE) $(MYSQLFLAGS)
 
-.PHONY: load-% init
+.PHONY: load-% calls_% init
+
+calls_%: ; python src/imputecalls.py $(DATABASE) $*
 
 load-%: sql/generate_ref.sql
 	{ echo 'SET @feed_index = $*;' ; cat $< ; } | \
