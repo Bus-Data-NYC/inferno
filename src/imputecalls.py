@@ -51,6 +51,11 @@ INSERT = """INSERT INTO calls
     (vehicle_id, trip_index, rds_index, stop_sequence, call_time, source, deviation)
     VALUES ({}, {}, %s, %s, %s, %s, 555)"""
 
+DEFAULT_LOGIN = {
+    'host': 'localhost',
+    'port': 3306,
+    'user': 'ec2-user'
+}
 
 def pairwise(iterable):
     "s -> (s0,s1), (s1,s2), (s2, s3), ..."
@@ -61,7 +66,7 @@ def pairwise(iterable):
 
 def get_config(filename=None):
     filename = os.path.expanduser(filename or "~/.my.cnf")
-    cp = configparser.ConfigParser()
+    cp = configparser.ConfigParser(defaults=DEFAULT_LOGIN)
     with open(filename) as f:
         try:
             cp.read_file(f)
@@ -70,9 +75,9 @@ def get_config(filename=None):
 
         if cp.has_section('client'):
             return {
-                "host": cp.get('client', 'host', fallback='localhost'),
+                "host": cp.get('client', 'host'),
                 "passwd": cp.get('client', 'password'),
-                "port": cp.get('client', 'port', fallback=3306),
+                "port": cp.get('client', 'port'),
                 "user": cp.get('client', 'user'),
             }
         else:
