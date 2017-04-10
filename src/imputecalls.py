@@ -1,9 +1,7 @@
 #!/user/bin/env python
 from __future__ import division
 import sys
-import csv # DEBUG
-import os.path
-from datetime import datetime, timedelta
+from datetime import timedelta
 from collections import Counter
 from itertools import chain, izip, tee
 import MySQLdb
@@ -104,8 +102,8 @@ def filter_positions(cursor, vehicle_id, date):
 
         # If patterns differ, stop sequence goes down, or half an hour passed
         runchange = (position['pattern'] != prev.get('pattern') or
-                           (position['stop_sequence'] or -2) < prev.get('stop_sequence', -1) or
-                           position['arrival'] > prev.get('arrival') + MAX_TIME_BETWEEN_STOPS)
+                     (position['stop_sequence'] or -2) < prev.get('stop_sequence', -1) or
+                     position['arrival'] > prev.get('arrival') + MAX_TIME_BETWEEN_STOPS)
 
         if runchange:
             # start a new run
@@ -250,9 +248,6 @@ def generate_calls(run, stoptimes):
     # [rds_index, stop_sequence, datetime, source]
     calls = []
 
-
-
-
     # Ensure stop sequences increment by 1
     i = 1
     stop_sequencer = {}
@@ -296,12 +291,12 @@ def main(db_name, date):
     source = MySQLdb.connect(db=db_name, cursorclass=MySQLdb.cursors.DictCursor, **config)
     cursor = source.cursor()
 
-    sink = MySQLdb.connect(db=db_name, **config).cursor()
+    sink = MySQLdb.connect(db=db_name, **config)
 
     # Get distinct vehicles from MySQL
     vehicles = fetch_vehicles(cursor, date)
 
-    writer = csv.writer(sys.stderr,delimiter='\t')
+    writer = csv.writer(sys.stderr, delimiter='\t')
 
     # Run query for every vehicle (returns list in memory)
     for vehicle_id in vehicles:
@@ -310,10 +305,11 @@ def main(db_name, date):
 
         # each run will become a trip
         for run in runs:
+            if len(run) < 2:
+                continue
             # get the scheduled list of trips for this run
             trip_index = common([x['trip'] for x in run])
-            cursor.execute("""SELECT stop_id id, arrival_time AS time, rds_index, stop_sequence
-                FROM ref_stop_times WHERE trip_index = %s""", (trip_index,))
+            cursor.execute(SELECT_TRIP_INDEX, (trip_index,))
 
             calls = generate_calls(run, cursor.fetchall())
 
