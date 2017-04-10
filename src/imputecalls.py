@@ -209,18 +209,7 @@ def impute_call(run, stoptime, next_stoptime):
             method = 'E'
             first_after = run[-1]['next']
         except KeyError:
-            # Create a dummy position that will
-            # carry the trip forward at same speed.
-            if run[i - 1]['next_stop'] == last_before['next_stop']:
-                first_after = {
-                    'arrival':
-                    'departure':
-                    'stop_sequence': stoptime['stop_sequence'] + 1
-                }
-            else:
-                first_after = {}
-                import pprint
-                import pdb; pdb.set_trace()
+            return
 
     # got positions that are on either side of this guy
     if (last_before['next_stop'] == stoptime['id'] and
@@ -234,7 +223,15 @@ def impute_call(run, stoptime, next_stoptime):
         method = method or 'I'
         call_time = interpolate(stoptime['stop_sequence'], last_before, first_after)
 
-    return [stoptime['rds_index'], stoptime['stop_sequence'], call_time, method]
+    return [stoptime['rds_index'], stoptime['stop_sequence_original'], call_time, method]
+
+
+def impute_from_call(call1, call2, stoptime1, stoptime2):
+    # call2 > call1 when going forward in time, opposite when going back
+    other_dur = (call2[2] - call1[2]).total_seconds()
+    other_sched_dur = (stoptime2['time'] - stoptime1['time']).total_seconds()
+    sched_dur = stoptime2['time'] - stoptime1['time']
+    return call1[2] + sched_dur * (other_dur / other_sched_dur)
 
 
 def generate_calls(run, stoptimes):
@@ -265,6 +262,15 @@ def generate_calls(run, stoptimes):
         call = impute_call(run, stoptime, next_stoptime)
         if call is not None:
             calls.append(call)
+
+    # Optionally add in first/last stop, easier when we know the next/previous call
+    if calls[-1][1] != stoptimes[-1]['stop_sequence_original']:
+        call_time = impute_from_call(calls[-2][2], calls[-1][2], stoptimes[-2], stoptimes[-1])
+        calls.append([stoptimes[-1]['rds_index'], stoptimes[-1]['stop_sequence_original'], call_time, 'E'])
+
+    if calls[0][1] != stoptimes[0]['stop_sequence_original']:
+        call_time = impute_from_call(calls[1][2], calls[2][2], stoptimes[0], stoptimes[1])
+        calls.insert(0, [stoptimes[0]['rds_index'], stoptimes[0]['stop_sequence_original'], call_time, 'E'])
 
     recorded_stops = [c[1] for c in calls]
     for stoptime in stoptimes:
