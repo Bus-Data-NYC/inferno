@@ -5,7 +5,7 @@ import csv # DEBUG
 import os.path
 from datetime import datetime, timedelta
 from collections import Counter
-from itertools import izip, tee
+from itertools import chain, izip, tee
 import MySQLdb
 import MySQLdb.cursors
 from get_config import get_config
@@ -50,11 +50,11 @@ INSERT = """INSERT INTO calls
     VALUES ({}, {}, %s, %s, %s, %s, 555)"""
 
 
-def pairwise(iterable):
-    "s -> (s0,s1), (s1,s2), (s2, s3), ..."
+def pairwise(iterable, default=None):
+    "s -> (s0,s1), (s1,s2), (s2, s3), ... (s'n, None)"
     a, b = tee(iterable)
     next(b, None)
-    return izip(a, b)
+    return izip(a, chain(b, [default]))
 
 
 def common(lis):
@@ -157,6 +157,67 @@ def interpolate(stop_number, last_before, first_after):
     return last_before['departure'] + delta
 
 
+def impute_call(run, stoptime, next_stoptime):
+    '''
+    Impute a single call based on a scheduled stop times and a run of positions.
+    The following scheduled stop time is also used to ensure correct ordering
+    '''
+    # each call is a list of this format:
+    # [rds_index, stop_sequence, datetime, source]
+    next_stoptime = next_stoptime or {'id': -1}
+    method = None
+
+    try:
+        i, last_before = get_last_before(run, stoptime['stop_sequence'])
+    except IndexError:
+        try:
+            # use the prev position as a phantom zeroth call
+            method = 'S'
+            last_before = run[0]['prev']
+            i = -1
+        except KeyError:
+            # if first, assume it left on time
+            if stoptime['stop_sequence'] == 1:
+                call_time = run[0]['arrival'].date() + stoptime['time']
+                return [stoptime['rds_index'], 1, call_time, 'S']
+            return
+
+    try:
+        first_after = run[i + 1]
+    except IndexError:
+        # use the next position as a phantom (n+1)th call
+        try:
+            method = 'E'
+            first_after = run[-1]['next']
+        except KeyError:
+            # Create a dummy position that will
+            # carry the trip forward at same speed.
+            if run[i - 1]['next_stop'] == last_before['next_stop']:
+                first_after = {
+                    'arrival':
+                    'departure':
+                    'stop_sequence': stoptime['stop_sequence'] + 1
+                }
+            else:
+                first_after = {}
+                import pprint
+                import pdb; pdb.set_trace()
+
+    # got positions that are on either side of this guy
+    if (last_before['next_stop'] == stoptime['id'] and
+            first_after['next_stop'] == next_stoptime['id']):
+        method = 'C'
+        elapsed = first_after['arrival'] - last_before['departure']
+        call_time = last_before['departure'] + timedelta(seconds=elapsed.total_seconds() / 2)
+
+    # if there aren't any, we'll interpolate between surrounding stops
+    else:
+        method = method or 'I'
+        call_time = interpolate(stoptime['stop_sequence'], last_before, first_after)
+
+    return [stoptime['rds_index'], stoptime['stop_sequence'], call_time, method]
+
+
 def generate_calls(run, stoptimes):
     '''
     list of calls to be written
@@ -167,50 +228,9 @@ def generate_calls(run, stoptimes):
     # each call is a list of this format:
     # [rds_index, stop_sequence, datetime, source]
     calls = []
-    dictwriter = csv.DictWriter(sys.stderr, ['arrival', 'stop_sequence', 'next_stop', 'dist_from_stop'], delimiter='\t')
 
-    # pairwise iteration: scheduled stoptime and next scheduled stoptime
-    for stoptime, next_stoptime in pairwise(stoptimes):
-        method = None
 
-        try:
-            i, last_before = get_last_before(run, stoptime['stop_sequence'])
-        except IndexError:
-            try:
-                # use the prev position as a phantom zeroth call
-                last_before = run[0]['prev']
-                i = -1
-                method = 'S'
-            except KeyError:
-                # if first, assume it left on time
-                if stoptime['stop_sequence'] == 1:
-                    call_time = run[0]['arrival'].date() + stoptime['time']
-                    calls.append([stoptime['rds_index'], 1, call_time, 'S'])
-                continue
 
-        try:
-            first_after = run[i + 1]
-        except IndexError:
-            try:
-                # use the next position as a phantom (n+1)th call
-                first_after = run[-1]['next']
-                method = 'E'
-            except KeyError:
-                continue
-
-        # got positions that are on either side of this guy
-        if (last_before['next_stop'] == stoptime['id'] and
-                first_after['next_stop'] == next_stoptime['id']):
-            method = 'C'
-            elapsed = first_after['arrival'] - last_before['departure']
-            call_time = last_before['departure'] + timedelta(seconds=elapsed.total_seconds() / 2)
-
-        # if there aren't any, we'll interpolate between surrounding stops
-        else:
-            method = method or 'I'
-            call_time = interpolate(stoptime['stop_sequence'], last_before, first_after)
-
-        calls.append([stoptime['rds_index'], stoptime['stop_sequence'], call_time, method])
 
     recorded_stops = [c[1] for c in calls]
     for stoptime in stoptimes:
@@ -218,7 +238,7 @@ def generate_calls(run, stoptimes):
             continue
 
         # End the trip
-        
+
     # DEBUG
     dictwriter.writerows([
         {
@@ -229,6 +249,7 @@ def generate_calls(run, stoptimes):
             } for c in run])
 
     return calls
+
 
 def main(db_name, date):
     # connect to MySQL
