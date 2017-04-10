@@ -253,6 +253,24 @@ def generate_calls(run, stoptimes):
 
 
 
+    # Ensure stop sequences increment by 1
+    i = 1
+    stop_sequencer = {}
+    for s in stoptimes:
+        s['stop_sequence_original'] = s['stop_sequence']
+        stop_sequencer[s['stop_sequence_original']] = s['stop_sequence'] = i
+        i += 1
+
+    for r in run:
+        r['stop_sequence_original'] = r['stop_sequence']
+        r['stop_sequence'] = stop_sequencer[r['stop_sequence_original']]
+
+    # pairwise iteration: scheduled stoptime and next scheduled stoptime
+    for stoptime, next_stoptime in pairwise(stoptimes):
+        call = impute_call(run, stoptime, next_stoptime)
+        if call is not None:
+            calls.append(call)
+
     recorded_stops = [c[1] for c in calls]
     for stoptime in stoptimes:
         if stoptime['stop_sequence'] in recorded_stops:
