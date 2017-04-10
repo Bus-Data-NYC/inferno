@@ -30,6 +30,7 @@ VEHICLE_QUERY = """SELECT
     dist_from_stop,
     pattern_id pattern,
     dist_along_route,
+    service_date,
     stop_sequence
 FROM positions p
     INNER JOIN ref_trips rt ON (rt.trip_id = p.trip_id)
