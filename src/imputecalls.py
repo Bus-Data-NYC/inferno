@@ -41,9 +41,27 @@ FROM positions p
         AND p.next_stop_id = st.stop_id
     )
 WHERE vehicle_id = %s
-    AND service_date = %s
+    AND (
+        service_date = %s
+        OR (
+            DATE(CONVERT_TZ(p.timestamp_utc, 'UTC', 'EST')) = DATE_SUB(%s, INTERVAL 1 DAY)
+            AND TIME(CONVERT_TZ(p.timestamp_utc, 'UTC', 'EST')) > '23:00:00'
+        )
+        OR (
+            DATE(CONVERT_TZ(p.timestamp_utc, 'UTC', 'EST')) = DATE_ADD(%s, INTERVAL 1 DAY)
+            AND TIME(CONVERT_TZ(p.timestamp_utc, 'UTC', 'EST')) < '04:30:00'
+        )
+    )
 ORDER BY timestamp_utc
 """
+
+# TODO remove debugging
+SELECT_VEHICLE = """SELECT DISTINCT vehicle_id
+    FROM positions WHERE service_date = %s and vehicle_id = 6677"""
+
+SELECT_TRIP_INDEX = """SELECT
+    stop_id id, arrival_time AS time, rds_index, stop_sequence
+    FROM ref_stop_times WHERE trip_index = %s"""
 
 INSERT = """INSERT INTO calls
     (vehicle_id, trip_index, rds_index, stop_sequence, call_time, source, deviation)
@@ -75,7 +93,7 @@ def filter_positions(cursor, vehicle_id, date):
         departure max
     '''
     # load up cursor with every position for vehicle
-    cursor.execute(VEHICLE_QUERY, (vehicle_id, date))
+    cursor.execute(VEHICLE_QUERY, (vehicle_id, date, date, date))
 
     runs = []
     prev = {}
@@ -129,6 +147,9 @@ def filter_positions(cursor, vehicle_id, date):
 
         prev = position
         position = cursor.fetchone()
+
+    # filter out any runs that start the next day
+    runs = [run for run in runs if run[0]['service_date'].isoformat() == date]
 
     return runs
 
