@@ -8,10 +8,7 @@ from collections import Counter
 from itertools import izip, tee
 import MySQLdb
 import MySQLdb.cursors
-try:
-    import configparser
-except ImportError:
-    from six.moves import configparser
+from get_config import get_config
 
 '''
 Goal: from bustime positions, impute stop calls. Each output row should contain:
@@ -52,38 +49,12 @@ INSERT = """INSERT INTO calls
     (vehicle_id, trip_index, rds_index, stop_sequence, call_time, source, deviation)
     VALUES ({}, {}, %s, %s, %s, %s, 555)"""
 
-DEFAULT_LOGIN = {
-    'host': 'localhost',
-    'port': '3306',
-    'user': 'ec2-user'
-}
-
 
 def pairwise(iterable):
     "s -> (s0,s1), (s1,s2), (s2, s3), ..."
     a, b = tee(iterable)
     next(b, None)
     return izip(a, b)
-
-
-def get_config(filename=None):
-    filename = os.path.expanduser(filename or "~/.my.cnf")
-    cp = configparser.ConfigParser(defaults=DEFAULT_LOGIN)
-    with open(filename) as f:
-        try:
-            cp.read_file(f)
-        except AttributeError:
-            cp.readfp(f)
-
-        if cp.has_section('client'):
-            return {
-                "host": cp.get('client', 'host'),
-                "passwd": cp.get('client', 'password'),
-                "port": int(cp.get('client', 'port')),
-                "user": cp.get('client', 'user'),
-            }
-        else:
-            return {}
 
 
 def common(lis):
