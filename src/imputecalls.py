@@ -2,7 +2,6 @@
 from __future__ import division
 import sys
 import os
-from random import choice
 from multiprocessing import Pool
 import logging
 from datetime import timedelta
@@ -182,7 +181,7 @@ def extrapolate(call1, call2, stoptime1, stoptime2):
     # Return the extrapolated duration between
     # stoptime1 and stoptime2 based on observed duration between call1 and call2
     assert call2[2] > call1[2]
-    assert stoptime2['time'] > stoptime1['time']
+    assert stoptime2['time'] >= stoptime1['time']
     call_dur = (call2[2] - call1[2]).total_seconds()
     call_sched_dur = max((stoptime2['time'] - stoptime1['time']).total_seconds(), 1.)
     sched_dur = stoptime2['time'] - stoptime1['time']
@@ -283,7 +282,6 @@ def generate_calls(run, stoptimes):
 
             except KeyError:
                 stop_sequencer[x['stop_sequence']] = x['stop_sequence']
-
     except Exception as err:
         logging.error('stop sequencing failed: %s', repr(err))
         return []

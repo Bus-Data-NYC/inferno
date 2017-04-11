@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta
 import unittest
 import imputecalls
+import data.positions
 
 
 class TestImpute(unittest.TestCase):
@@ -51,6 +52,11 @@ class TestImpute(unittest.TestCase):
         delta = imputecalls.extrapolate(call_1, call_2, stoptime_1, stoptime_2)
 
         assert call_1[2] + delta > call_1[2]
+
+    def test_calls(self):
+        for run in data.positions.runs:
+            calls = imputecalls.generate_calls(run, data.positions.stoptimes)
+
 
 if __name__ == '__main__':
     unittest.main()
