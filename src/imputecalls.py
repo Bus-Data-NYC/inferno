@@ -18,7 +18,7 @@ vehicle_id, trip_index, stop_sequence, arrival_time, departure_time, source (??)
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
-loghandler = logging.StreamHandler()
+loghandler = logging.StreamHandler(sys.stdout)
 logformatter = logging.Formatter(fmt='%(levelname)s: %(message)s')
 loghandler.setFormatter(logformatter)
 logger.addHandler(loghandler)
@@ -349,16 +349,16 @@ def generate_calls(run, stoptimes):
 
 def process_vehicle(vehicle_id, date, config):
     conn = MySQLdb.connect(**config)
-
+    print('STARTING', vehicle_id, file=sys.stderr)
     with conn.cursor() as cursor:
         # returns list in memory
         runs = filter_positions(cursor, vehicle_id, date)
 
-    # each run will become a trip
-    for run in runs:
-        if len(run) <= 3:
-            logging.info('missing positions for run %s', str(run[0]))
-            continue
+        # each run will become a trip
+        for run in runs:
+            if len(run) <= 3:
+                logging.info('missing positions for run: %s', str(run[0]))
+                continue
 
         # get the scheduled list of trips for this run
         trip_index = common([x['trip'] for x in run])
@@ -390,8 +390,8 @@ def main(db_name, date):
 
     with Pool(os.cpu_count() - 1) as pool:
         pool.starmap(process_vehicle, itervehicles)
-    
-    logger.info("SUCCESS: Committed %s", date)
+
+    print("SUCCESS: Committed %s" % date, file=sys.stderr)
 
 
 if __name__ == '__main__':
