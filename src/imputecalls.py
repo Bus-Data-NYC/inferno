@@ -340,8 +340,9 @@ def generate_calls(run, stoptimes):
                 calls.extend(new_calls)
                 recorded_stops.extend([c[1] for c in new_calls])
 
-    except Exception:
-        logging.error('imputation failure: %s', str(run[0]))
+    except Exception as err:
+        logging.error('imputation failure')
+        logging.error(err)
         return []
 
     calls.sort(key=lambda x: x[1])
