@@ -334,7 +334,14 @@ def generate_calls(run, stoptimes):
             if stoptime['stop_sequence_original'] in recorded_stops:
                 continue
 
-            new_calls = impute_calls(stoptime['stop_sequence_original'], calls, stoptimes)
+            try:
+                new_calls = impute_calls(stoptime['stop_sequence_original'], calls, stoptimes)
+            except KeyError:
+                from pprint import pprint
+                logging.error(pprint(stoptime['stop_sequence_original']))
+                logging.error(pprint(calls))
+                logging.error(pprint(stoptimes))
+                raise
 
             if len(new_calls):
                 calls.extend(new_calls)
@@ -342,7 +349,7 @@ def generate_calls(run, stoptimes):
 
     except Exception as err:
         logging.error('imputation failure')
-        logging.error(err)
+        logging.error(repr(err), err)
         return []
 
     calls.sort(key=lambda x: x[1])
