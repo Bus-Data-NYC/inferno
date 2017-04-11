@@ -223,6 +223,7 @@ def impute_calls(stop_sequence, calls, stoptimes):
     next_call = min([c for c in calls if c[1] > stop_sequence], key=lambda x: x[1])
 
     st_dict = {x['stop_sequence_original']: x for x in stoptimes}
+    seq2orig = {x['stop_sequence']: x['stop_sequence_original'] for x in stoptimes}
     next_st, prev_st = st_dict[next_call[1]], st_dict[prev_call[1]]
 
     # Duration between the two stops divided by the scheduled duration
@@ -232,18 +233,22 @@ def impute_calls(stop_sequence, calls, stoptimes):
     deltasum = timedelta(seconds=0)
     # Interpolate the particular (missing) stop number between the two positions
     for seq in range(prev_st['stop_sequence'] + 1, next_st['stop_sequence']):
+        orig_seq = seq2orig[seq]
+        orig_seq_prev = seq2orig[seq - 1]
         try:
             # scheduled time between this stop and immediate previous stop
-            scheduled_call_elapsed = (st_dict[seq]['time'] - st_dict[seq - 1]['time']).total_seconds()
+            scheduled_call_elapsed = (st_dict[orig_seq]['time'] - st_dict[orig_seq_prev]['time']).total_seconds()
+
             # delta is schedule * ratio
             deltasum += timedelta(seconds=scheduled_call_elapsed * ratio)
 
-            output.append([st_dict[seq]['rds_index'],
-                           st_dict[seq]['stop_sequence_original'],
+            output.append([st_dict[orig_seq]['rds_index'],
+                           st_dict[orig_seq]['stop_sequence_original'],
                            prev_call[2] + deltasum,
                            'I'])
+
         except KeyError as err:
-            logging.error('KeyError seq: %s, key: %s', seq, err)
+            logging.error('KeyError (2) seq: %s, key: %s', seq, err)
             raise err
 
     return output
