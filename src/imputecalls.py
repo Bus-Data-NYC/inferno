@@ -2,14 +2,14 @@
 from __future__ import division
 import sys
 import os
+from random import choice
 from multiprocessing import Pool
 import logging
 from datetime import timedelta
 from collections import Counter
-from itertools import chain, tee, repeat
+from itertools import chain, cycle, tee
 import MySQLdb
 import MySQLdb.cursors
-from get_config import get_config
 
 '''
 Goal: from bustime positions, impute stop calls. Each output row should contain:
@@ -364,10 +364,10 @@ def generate_calls(run, stoptimes):
     return calls
 
 
-def process_vehicle(vehicle_id, date, config):
-    conn = MySQLdb.connect(**config)
+def process_vehicle(vehicle_id, date, rconf, wconf):
+    source = MySQLdb.connect(**rconf)
     print('STARTING', vehicle_id, file=sys.stderr)
-    with conn.cursor() as cursor:
+    with source.cursor() as cursor:
         # returns list in memory
         runs = filter_positions(cursor, vehicle_id, date)
         lenc = 0
@@ -386,31 +386,41 @@ def process_vehicle(vehicle_id, date, config):
 
         calls = generate_calls(run, cursor.fetchall())
 
-            # write calls to sink
-            insert = INSERT.format(vehicle_id, trip_index)
-            cursor.executemany(insert, calls)
-            conn.commit()
-            lenc += len(calls)
+    source.close()
+
+    sink = MySQLdb.connect(**wconf)
+    with sink.cursor() as cursor:
+        # write calls to sink
+        insert = INSERT.format(vehicle_id, trip_index)
+        cursor.executemany(insert, calls)
+        lenc += len(calls)
         print('COMMIT', vehicle_id, lenc, file=sys.stderr)
 
+    sink.commit()
     sink.close()
 
-def main(db_name, date, vehicle=None, config=None):
+
+def conf(section):
+    return {
+        'cursorclass': MySQLdb.cursors.DictCursor,
+        'read_default_file': '~/.my.cnf',
+        'read_default_group': section
+    }
+
+
+def main(date, vehicle=None, config=None):
     # connect to MySQL
-    config = config or get_config()
-    config['unix_socket'] = '/tmp/mysql.sock'
-    config['db'] = db_name
-    config['cursorclass'] = MySQLdb.cursors.DictCursor
+    write_conf = conf('client')
+    read_conf = conf('reader')
 
     if vehicle:
         vehicles = [vehicle]
     else:
-        conn = MySQLdb.connect(**config)
+        conn = MySQLdb.connect(**read_conf)
         vehicles = fetch_vehicles(conn.cursor(), date)
         conn.close()
 
-    count = len(vehicles)
-    itervehicles = zip(vehicles, repeat(date, count), repeat(config, count))
+    itervehicles = zip(vehicles, cycle([date]), cycle([read_conf, write_conf]), cycle([write_conf]))
 
     with Pool(os.cpu_count() - 1) as pool:
         pool.starmap(process_vehicle, itervehicles)
