@@ -373,17 +373,19 @@ def process_vehicle(vehicle_id, date, config):
 
     sink.close()
 
-
-def main(db_name, date):
+def main(db_name, date, vehicle=None, config=None):
     # connect to MySQL
     config = config or get_config()
     config['unix_socket'] = '/tmp/mysql.sock'
     config['db'] = db_name
     config['cursorclass'] = MySQLdb.cursors.DictCursor
 
-    conn = MySQLdb.connect(**config)
-    vehicles = fetch_vehicles(conn.cursor(), date)
-    conn.close()
+    if vehicle:
+        vehicles = [vehicle]
+    else:
+        conn = MySQLdb.connect(**config)
+        vehicles = fetch_vehicles(conn.cursor(), date)
+        conn.close()
 
     count = len(vehicles)
     itervehicles = zip(vehicles, repeat(date, count), repeat(config, count))
