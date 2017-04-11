@@ -348,6 +348,7 @@ def process_vehicle(vehicle_id, date, config):
     # each run will become a trip
     for run in runs:
         if len(run) <= 3:
+            logging.info('missing positions for run %s', str(run[0]))
             continue
 
         # get the scheduled list of trips for this run
