@@ -1,13 +1,12 @@
 #!/user/bin/env python3
 from __future__ import division
 import sys
-from multiprocessing import Pool
 import logging
 from datetime import timedelta
 from collections import Counter
 from itertools import chain, tee, repeat
-import MySQLdb
-import MySQLdb.cursors
+import pymysql
+import pymysql.cursors
 from get_config import get_config
 try:
     from itertools import izip
@@ -338,12 +337,10 @@ def generate_calls(run, stoptimes):
     return calls
 
 
-def process_vehicle(vehicle_id, date, config):
-    sink = MySQLdb.connect(**config)
-    cursor = sink.cursor()
-
-    # returns list in memory
-    runs = filter_positions(cursor, vehicle_id, date)
+def process_vehicle(conn, vehicle_id, date):
+    with conn.cursor() as cursor:
+        # returns list in memory
+        runs = filter_positions(cursor, vehicle_id, date)
 
     # each run will become a trip
     for run in runs:
@@ -357,39 +354,36 @@ def process_vehicle(vehicle_id, date, config):
 
         calls = generate_calls(run, cursor.fetchall())
 
-        # write calls to sink
-        insert = INSERT.format(vehicle_id, trip_index)
-        cursor.executemany(insert, calls)
-        sink.commit()
+            # write calls to sink
+            insert = INSERT.format(vehicle_id, trip_index)
+            cursor.executemany(insert, calls)
+            conn.commit()
 
     sink.close()
 
 
 def main(db_name, date):
     # connect to MySQL
-    config = get_config()
+    config = config or get_config()
+    config['unix_socket'] = '/tmp/mysql.sock'
     config['db'] = db_name
     config['cursorclass'] = MySQLdb.cursors.DictCursor
 
     def connection():
         return MySQLdb.connect(**config)
 
-    source = connection()
+    conn = connection()
 
     # Get distinct vehicles from MySQL
-    vehicles = fetch_vehicles(source.cursor(), date)
-    count = len(vehicles)
-    source.close()
+    vehicles = fetch_vehicles(conn.cursor(), date)
 
-    for x in zip(vehicles, repeat(date, count), repeat(config, count)):
-        process_vehicle(*x)
+    for v in vehicles:
+        process_vehicle(conn, v, date)
 
-    # with Pool(2, initializer=connection) as p:
-    #     itervehicles = zip(vehicles, repeat(date, count), repeat(config, count))
-    #     # Run query for every vehicle (returns list in memory)
-    #     p.starmap(process_vehicle, itervehicles)
+    conn.close()
 
-    logger.info("SUCCESS: Committed %d", date)
+    # Run query for every vehicle (returns list in memory)
+    logger.info("SUCCESS: Committed %s", date)
 
 
 if __name__ == '__main__':
