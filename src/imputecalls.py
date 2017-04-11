@@ -373,41 +373,41 @@ def conf(section):
 
 
 def process_vehicle(vehicle_id, date, rsect, wsect):
-    rconf = conf(rsect)
-    wconf = conf(wsect)
-    source = MySQLdb.connect(**rconf)
+    source = MySQLdb.connect(**conf(rsect))
+    sink = MySQLdb.connect(**conf(wsect))
+
     print('STARTING', vehicle_id, file=sys.stderr)
     with source.cursor() as cursor:
         # returns list in memory
         runs = filter_positions(cursor, vehicle_id, date)
         lenc = 0
 
-        # each run will become a trip
-        for run in runs:
-            if len(run) == 0:
-                continue
-            elif len(run) <= 3:
-                logging.info('short run (%d positions), v_id=%s, %s', len(run), vehicle_id, run[0]['arrival'])
-                continue
+        with sink.cursor() as sinker:
+            # each run will become a trip
+            for run in runs:
+                if len(run) == 0:
+                    continue
+                elif len(run) <= 3:
+                    logging.info('short run (%d positions), v_id=%s, %s',
+                                 len(run), vehicle_id, run[0]['arrival'])
+                    continue
 
-        # get the scheduled list of trips for this run
-        trip_index = common([x['trip'] for x in run])
-        cursor.execute(SELECT_TRIP_INDEX, (trip_index,))
+                # get the scheduled list of trips for this run
+                trip_index = common([x['trip'] for x in run])
 
-        calls = generate_calls(run, cursor.fetchall())
+                cursor.execute(SELECT_TRIP_INDEX, (trip_index,))
+                calls = generate_calls(run, cursor.fetchall())
 
-    source.close()
+                # write calls to sink
+                insert = INSERT.format(vehicle_id, trip_index)
+                sinker.executemany(insert, calls)
+                lenc += len(calls)
 
-    sink = MySQLdb.connect(**wconf)
-    with sink.cursor() as cursor:
-        # write calls to sink
-        insert = INSERT.format(vehicle_id, trip_index)
-        cursor.executemany(insert, calls)
-        lenc += len(calls)
-        print('COMMIT', vehicle_id, lenc, file=sys.stderr)
+            print('COMMIT', vehicle_id, lenc, file=sys.stderr)
+            sink.commit()
 
-    sink.commit()
     sink.close()
+    source.close()
 
 
 def main(congfig_sections, date, vehicle=None):
