@@ -1,17 +1,15 @@
 #!/user/bin/env python3
 from __future__ import division
 import sys
+import os
+from multiprocessing import Pool
 import logging
 from datetime import timedelta
 from collections import Counter
 from itertools import chain, tee, repeat
-import pymysql
-import pymysql.cursors
+import MySQLdb
+import MySQLdb.cursors
 from get_config import get_config
-try:
-    from itertools import izip
-except ImportError:
-    izip = zip
 
 '''
 Goal: from bustime positions, impute stop calls. Each output row should contain:
@@ -84,7 +82,7 @@ def pairwise(iterable, default=None):
     "s -> (s0,s1), (s1,s2), (s2, s3), ... (s'n, None)"
     a, b = tee(iterable)
     next(b, None)
-    return izip(a, chain(b, [default]))
+    return zip(a, chain(b, [default]))
 
 
 def common(lis):
@@ -181,12 +179,14 @@ def get_last_before(sequence, stop_number):
 
 
 def extrapolate(call1, call2, stoptime1, stoptime2):
-    # call2 > call1 when going forward in time, opposite when going back
-    other_dur = (call2[2] - call1[2]).total_seconds()
-    other_sched_dur = max((stoptime2['time'] - stoptime1['time']).total_seconds(), 1.)
+    # Return the extrapolated duration between
+    # stoptime1 and stoptime2 based on observed duration between call1 and call2
+    assert call2[2] > call1[2]
+    assert stoptime2['time'] > stoptime1['time']
+    call_dur = (call2[2] - call1[2]).total_seconds()
+    call_sched_dur = max((stoptime2['time'] - stoptime1['time']).total_seconds(), 1.)
     sched_dur = stoptime2['time'] - stoptime1['time']
-    delta = timedelta(seconds=sched_dur.total_seconds() * (other_dur / other_sched_dur))
-    return call1[2] + delta
+    return timedelta(seconds=sched_dur.total_seconds() * (call_dur / call_sched_dur))
 
 
 def find_call(positions, stoptime, next_stoptime):
@@ -287,11 +287,16 @@ def generate_calls(run, stoptimes):
     # Optionally add in at start/end stops, easier when we know the next/previous call
     try:
         if stoptimes[-1]['stop_sequence_original'] not in recorded_stops:
-            call_time = extrapolate(calls[-2], calls[-1], stoptimes[-2], stoptimes[-1])
-            calls.append([stoptimes[-1]['rds_index'], stoptimes[-1]['stop_sequence_original'], call_time, 'E'])
+            delta = extrapolate(calls[-2], calls[-1], stoptimes[-2], stoptimes[-1])
+            calls.append([
+                stoptimes[-1]['rds_index'],
+                stoptimes[-1]['stop_sequence_original'],
+                calls[-1] + delta,
+                'E']
+            )
             # Insert a dummy position call right after the imputed first stop
             run.append({
-                'departure': call_time + timedelta(seconds=1),
+                'departure': calls[-1] + delta + timedelta(seconds=1),
                 'scheduled_time': stoptimes[-1]['time'] + timedelta(seconds=1),
                 'stop_sequence': stoptimes[-1]['stop_sequence'] + 1,
                 'i_am_a_dummy': True,
@@ -300,12 +305,17 @@ def generate_calls(run, stoptimes):
             recorded_stops.append(stoptimes[-1]['stop_sequence_original'])
 
         if stoptimes[0]['stop_sequence_original'] not in recorded_stops:
-            call_time = extrapolate(calls[1], calls[2], stoptimes[0], stoptimes[1])
-            calls.insert(0, [stoptimes[0]['rds_index'], stoptimes[0]['stop_sequence_original'], call_time, 'S'])
+            delta = extrapolate(calls[1], calls[2], stoptimes[0], stoptimes[1])
+            calls.insert(0, [
+                stoptimes[0]['rds_index'],
+                stoptimes[0]['stop_sequence_original'],
+                calls[0] - delta,
+                'S']
+            )
             # Insert a dummy position call right before the imputed first stop
             run.insert(0, {
                 'next_stop': stoptimes[0]['id'],
-                'departure': call_time - timedelta(seconds=1),
+                'departure': calls[0] - delta - timedelta(seconds=1),
                 'scheduled_time': stoptimes[0]['time'],
                 'stop_sequence': stoptimes[0]['stop_sequence'],
                 'i_am_a_dummy': True
@@ -337,7 +347,9 @@ def generate_calls(run, stoptimes):
     return calls
 
 
-def process_vehicle(conn, vehicle_id, date):
+def process_vehicle(vehicle_id, date, config):
+    conn = MySQLdb.connect(**config)
+
     with conn.cursor() as cursor:
         # returns list in memory
         runs = filter_positions(cursor, vehicle_id, date)
@@ -369,20 +381,16 @@ def main(db_name, date):
     config['db'] = db_name
     config['cursorclass'] = MySQLdb.cursors.DictCursor
 
-    def connection():
-        return MySQLdb.connect(**config)
-
-    conn = connection()
-
-    # Get distinct vehicles from MySQL
+    conn = MySQLdb.connect(**config)
     vehicles = fetch_vehicles(conn.cursor(), date)
-
-    for v in vehicles:
-        process_vehicle(conn, v, date)
-
     conn.close()
 
-    # Run query for every vehicle (returns list in memory)
+    count = len(vehicles)
+    itervehicles = zip(vehicles, repeat(date, count), repeat(config, count))
+
+    with Pool(os.cpu_count() - 1) as pool:
+        pool.starmap(process_vehicle, itervehicles)
+    
     logger.info("SUCCESS: Committed %s", date)
 
 
