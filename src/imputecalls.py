@@ -320,6 +320,12 @@ def generate_calls(run, stoptimes):
             run[-1]['arrival'] = run[-1]['departure']
             recorded_stops.append(stoptimes[-1]['stop_sequence_original'])
 
+    except Exception as err:
+        logging.error(repr(err))
+        logging.error('failed end-extrapolation. v_id=%s, trip=%d',
+                      run[0]['vehicle_id'], run[0]['trip'])
+
+    try:
         if stoptimes[0]['stop_sequence_original'] not in recorded_stops:
             delta = extrapolate(calls[1], calls[2], stoptimes[0], stoptimes[1])
             calls.insert(0, [
@@ -340,10 +346,9 @@ def generate_calls(run, stoptimes):
             recorded_stops.append(stoptimes[0]['stop_sequence_original'])
 
     except Exception as err:
-        logging.error(err)
-        logging.error('failed extrapolation. v_id=%s, trip=%d',
+        logging.error(repr(err))
+        logging.error('failed start-extrapolation. v_id=%s, trip=%d',
                       run[0]['vehicle_id'], run[0]['trip'])
-        return []
 
     # Now do imputations
     try:
