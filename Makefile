@@ -14,7 +14,7 @@ $(addprefix calls-2016-,$(months)): calls-2016-%:
 	$(MAKE) $(addprefix calls-day-2016-$*-,$(shell cal $* 2016 | xargs | awk '{print $$NF}' | xargs seq -w 1))
 
 calls-day-%:
-	python3 src/imputecalls.py $(DATABASE) $*
+	python3 src/imputecalls.py client,reader $*
 
 load-%: sql/generate_ref.sql
 	{ echo 'SET @feed_index = $*;' ; cat $< ; } | \
