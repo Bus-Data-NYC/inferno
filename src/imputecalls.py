@@ -21,6 +21,10 @@ vehicle_id, trip_index, stop_sequence, arrival_time, departure_time, source (??)
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+loghandler = logging.StreamHandler()
+logformatter = logging.Formatter(fmt='%(levelname)s: %(message)s')
+loghandler.setFormatter(logformatter)
+logger.addHandler(loghandler)
 
 # Maximum elapsed time between positions before we declare a new run
 MAX_TIME_BETWEEN_STOPS = timedelta(seconds=60 * 30)
