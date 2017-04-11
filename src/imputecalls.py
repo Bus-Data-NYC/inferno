@@ -364,7 +364,17 @@ def generate_calls(run, stoptimes):
     return calls
 
 
-def process_vehicle(vehicle_id, date, rconf, wconf):
+def conf(section):
+    return {
+        'cursorclass': MySQLdb.cursors.DictCursor,
+        'read_default_file': '~/.my.cnf',
+        'read_default_group': section
+    }
+
+
+def process_vehicle(vehicle_id, date, rsect, wsect):
+    rconf = conf(rsect)
+    wconf = conf(wsect)
     source = MySQLdb.connect(**rconf)
     print('STARTING', vehicle_id, file=sys.stderr)
     with source.cursor() as cursor:
@@ -400,27 +410,18 @@ def process_vehicle(vehicle_id, date, rconf, wconf):
     sink.close()
 
 
-def conf(section):
-    return {
-        'cursorclass': MySQLdb.cursors.DictCursor,
-        'read_default_file': '~/.my.cnf',
-        'read_default_group': section
-    }
-
-
-def main(date, vehicle=None, config=None):
+def main(congfig_sections, date, vehicle=None):
     # connect to MySQL
-    write_conf = conf('client')
-    read_conf = conf('reader')
+    sections = congfig_sections.split(',')
 
     if vehicle:
         vehicles = [vehicle]
     else:
-        conn = MySQLdb.connect(**read_conf)
+        conn = MySQLdb.connect(**conf(sections[0]))
         vehicles = fetch_vehicles(conn.cursor(), date)
         conn.close()
 
-    itervehicles = zip(vehicles, cycle([date]), cycle([read_conf, write_conf]), cycle([write_conf]))
+    itervehicles = zip(vehicles, cycle([date]), cycle(sections), cycle([sections[0]]))
 
     with Pool(os.cpu_count() - 1) as pool:
         pool.starmap(process_vehicle, itervehicles)
