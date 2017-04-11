@@ -232,15 +232,19 @@ def impute_calls(stop_sequence, calls, stoptimes):
     deltasum = timedelta(seconds=0)
     # Interpolate the particular (missing) stop number between the two positions
     for seq in range(prev_st['stop_sequence'] + 1, next_st['stop_sequence']):
-        # scheduled time between this stop and immediate previous stop
-        scheduled_call_elapsed = (st_dict[seq]['time'] - st_dict[seq - 1]['time']).total_seconds()
-        # delta is schedule * ratio
-        deltasum += timedelta(seconds=scheduled_call_elapsed * ratio)
+        try:
+            # scheduled time between this stop and immediate previous stop
+            scheduled_call_elapsed = (st_dict[seq]['time'] - st_dict[seq - 1]['time']).total_seconds()
+            # delta is schedule * ratio
+            deltasum += timedelta(seconds=scheduled_call_elapsed * ratio)
 
-        output.append([st_dict[seq]['rds_index'],
-                       st_dict[seq]['stop_sequence_original'],
-                       prev_call[2] + deltasum,
-                       'I'])
+            output.append([st_dict[seq]['rds_index'],
+                           st_dict[seq]['stop_sequence_original'],
+                           prev_call[2] + deltasum,
+                           'I'])
+        except KeyError as err:
+            logging.error('KeyError seq: %s, key: %s', seq, err)
+            raise err
 
     return output
 
@@ -337,10 +341,10 @@ def generate_calls(run, stoptimes):
             try:
                 new_calls = impute_calls(stoptime['stop_sequence_original'], calls, stoptimes)
             except KeyError:
-                from pprint import pprint
-                logging.error(pprint(stoptime['stop_sequence_original']))
-                logging.error(pprint(calls))
-                logging.error(pprint(stoptimes))
+                from pprint import pformat
+                logging.error(pformat(stoptime['stop_sequence_original']))
+                logging.error(pformat(calls))
+                logging.error(pformat(stoptimes))
                 raise
 
             if len(new_calls):
@@ -348,8 +352,7 @@ def generate_calls(run, stoptimes):
                 recorded_stops.extend([c[1] for c in new_calls])
 
     except Exception as err:
-        logging.error('imputation failure')
-        logging.error(repr(err), err)
+        logging.error('imputation failure %s %s', repr(err), err)
         return []
 
     calls.sort(key=lambda x: x[1])
