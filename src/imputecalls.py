@@ -202,6 +202,8 @@ def find_call(positions, stoptime, next_stoptime):
     except IndexError:
         return
 
+    next_stoptime = next_stoptime or {'id': first_after['next_stop']}
+
     # got positions that are on either side of this guy
     if (last_before['next_stop'] == stoptime['id'] and
             first_after['next_stop'] == next_stoptime['id']):
@@ -284,7 +286,6 @@ def generate_calls(run, stoptimes):
 
     except Exception as err:
         logging.error('stop sequencing failed: %s', repr(err))
-        raise err
         return []
 
     # pairwise iteration: scheduled stoptime and next scheduled stoptime
