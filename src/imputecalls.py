@@ -275,10 +275,15 @@ def generate_calls(run, stoptimes):
 
         for x in run:
             x['stop_sequence_original'] = x['stop_sequence']
-            x['stop_sequence'] = stop_sequencer[x['stop_sequence_original']]
+            try:
+                x['stop_sequence'] = stop_sequencer[x['stop_sequence_original']]
 
-    except Exception:
-        logging.error('stop sequencing failed: %s', str(run[0]))
+            except KeyError:
+                stop_sequencer[x['stop_sequence']] = x['stop_sequence']
+    
+    except Exception as err:
+        logging.error('stop sequencing failed: %s', repr(err))
+        raise err
         return []
 
     # pairwise iteration: scheduled stoptime and next scheduled stoptime
@@ -343,15 +348,7 @@ def generate_calls(run, stoptimes):
             if stoptime['stop_sequence_original'] in recorded_stops:
                 continue
 
-            try:
-                new_calls = impute_calls(stoptime['stop_sequence_original'], calls, stoptimes)
-            except KeyError:
-                from pprint import pformat
-                logging.error(pformat(stoptime['stop_sequence_original']))
-                logging.error(pformat(calls))
-                logging.error(pformat(stoptimes))
-                raise
-
+            new_calls = impute_calls(stoptime['stop_sequence_original'], calls, stoptimes)
             if len(new_calls):
                 calls.extend(new_calls)
                 recorded_stops.extend([c[1] for c in new_calls])
@@ -373,8 +370,10 @@ def process_vehicle(vehicle_id, date, config):
 
         # each run will become a trip
         for run in runs:
-            if len(run) <= 3:
-                logging.info('missing positions for run: %s', str(run[0]))
+            if len(run) == 0:
+                continue
+            elif len(run) <= 3:
+                logging.info('missing positions for run, v_id=%s, %s', vehicle_id, run[0]['arrival'])
                 continue
 
         # get the scheduled list of trips for this run
