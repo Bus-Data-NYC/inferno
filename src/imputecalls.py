@@ -291,12 +291,12 @@ def generate_calls(run, stoptimes):
             calls.append([
                 stoptimes[-1]['rds_index'],
                 stoptimes[-1]['stop_sequence_original'],
-                calls[-1] + delta,
+                calls[-1][2] + delta,
                 'E']
             )
             # Insert a dummy position call right after the imputed first stop
             run.append({
-                'departure': calls[-1] + delta + timedelta(seconds=1),
+                'departure': calls[-1][2] + delta + timedelta(seconds=1),
                 'scheduled_time': stoptimes[-1]['time'] + timedelta(seconds=1),
                 'stop_sequence': stoptimes[-1]['stop_sequence'] + 1,
                 'i_am_a_dummy': True,
@@ -309,13 +309,13 @@ def generate_calls(run, stoptimes):
             calls.insert(0, [
                 stoptimes[0]['rds_index'],
                 stoptimes[0]['stop_sequence_original'],
-                calls[0] - delta,
+                calls[0][2] - delta,
                 'S']
             )
             # Insert a dummy position call right before the imputed first stop
             run.insert(0, {
                 'next_stop': stoptimes[0]['id'],
-                'departure': calls[0] - delta - timedelta(seconds=1),
+                'departure': calls[0][2] - delta - timedelta(seconds=1),
                 'scheduled_time': stoptimes[0]['time'],
                 'stop_sequence': stoptimes[0]['stop_sequence'],
                 'i_am_a_dummy': True
@@ -323,7 +323,8 @@ def generate_calls(run, stoptimes):
             run[0]['arrival'] = run[0]['departure']
             recorded_stops.append(stoptimes[0]['stop_sequence_original'])
 
-    except Exception:
+    except Exception as err:
+        logging.error(err)
         logging.error('failed extrapolation: %s', str(run[0]))
         return []
 
