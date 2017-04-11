@@ -373,7 +373,7 @@ def process_vehicle(vehicle_id, date, config):
             if len(run) == 0:
                 continue
             elif len(run) <= 3:
-                logging.info('missing positions for run, v_id=%s, %s', vehicle_id, run[0]['arrival'])
+                logging.info('short run (%d positions), v_id=%s, %s', len(run), vehicle_id, run[0]['arrival'])
                 continue
 
         # get the scheduled list of trips for this run
