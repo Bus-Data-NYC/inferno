@@ -227,7 +227,8 @@ def impute_calls(stop_sequence, calls, stoptimes):
     next_st, prev_st = st_dict[next_call[1]], st_dict[prev_call[1]]
 
     # Duration between the two stops divided by the scheduled duration
-    ratio = (next_call[2] - prev_call[2]).total_seconds() / max(1., (next_st['time'] - prev_st['time']).total_seconds())
+    ratio = (next_call[2] - prev_call[2]).total_seconds() / \
+        max(1., (next_st['time'] - prev_st['time']).total_seconds())
 
     output = []
     deltasum = timedelta(seconds=0)
@@ -280,7 +281,7 @@ def generate_calls(run, stoptimes):
 
             except KeyError:
                 stop_sequencer[x['stop_sequence']] = x['stop_sequence']
-    
+
     except Exception as err:
         logging.error('stop sequencing failed: %s', repr(err))
         raise err
@@ -339,7 +340,8 @@ def generate_calls(run, stoptimes):
 
     except Exception as err:
         logging.error(err)
-        logging.error('failed extrapolation: %s', str(run[0]))
+        logging.error('failed extrapolation. v_id=%s, trip=%d',
+                      run[0]['vehicle_id'], run[0]['trip'])
         return []
 
     # Now do imputations
@@ -367,6 +369,7 @@ def process_vehicle(vehicle_id, date, config):
     with conn.cursor() as cursor:
         # returns list in memory
         runs = filter_positions(cursor, vehicle_id, date)
+        lenc = 0
 
         # each run will become a trip
         for run in runs:
@@ -386,6 +389,8 @@ def process_vehicle(vehicle_id, date, config):
             insert = INSERT.format(vehicle_id, trip_index)
             cursor.executemany(insert, calls)
             conn.commit()
+            lenc += len(calls)
+        print('COMMIT', vehicle_id, lenc, file=sys.stderr)
 
     sink.close()
 
