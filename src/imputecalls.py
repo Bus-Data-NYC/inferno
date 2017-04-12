@@ -421,7 +421,8 @@ def main(congfig_sections, date, vehicle=None):
         vehicles = [vehicle]
     else:
         conn = MySQLdb.connect(**conf(sections[0]))
-        vehicles = fetch_vehicles(conn.cursor(), date)
+        with conn.cursor() as cursor:
+            vehicles = fetch_vehicles(cursor, date)
         conn.close()
 
     itervehicles = zip(vehicles, cycle([date]), cycle(sections), cycle([sections[0]]))
