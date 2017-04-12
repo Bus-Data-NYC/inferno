@@ -426,7 +426,7 @@ def main(congfig_sections, date, vehicle=None):
 
     itervehicles = zip(vehicles, cycle([date]), cycle(sections), cycle([sections[0]]))
 
-    with Pool(os.cpu_count() - 1) as pool:
+    with Pool(os.cpu_count()) as pool:
         pool.starmap(process_vehicle, itervehicles)
 
     print("SUCCESS: Committed %s" % date, file=sys.stderr)
