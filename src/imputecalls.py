@@ -72,7 +72,7 @@ SELECT_TRIP_INDEX = """SELECT
     FROM ref_stop_times WHERE trip_index = %s
     ORDER BY stop_sequence ASC"""
 
-INSERT = """INSERT IGNORE INTO calls
+INSERT = """INSERT IGNORE INTO {}
     (vehicle_id, trip_index, rds_index, stop_sequence, call_time, source, deviation)
     VALUES ({}, {}, %s, %s, %s, %s, 555)"""
 
@@ -294,6 +294,9 @@ def generate_calls(run, stoptimes):
 
     recorded_stops = [c[1] for c in calls]
 
+    if len(recorded_stops) == 0:
+        return []
+
     # Optionally add in at start/end stops, easier when we know the next/previous call
     try:
         if stoptimes[-1]['stop_sequence_original'] not in recorded_stops:
@@ -318,6 +321,7 @@ def generate_calls(run, stoptimes):
         logging.error(repr(err))
         logging.error('failed end-extrapolation. v_id=%s, trip=%d',
                       run[0]['vehicle_id'], run[0]['trip'])
+        logging.error('captured %d stops', len(recorded_stops))
 
     try:
         if stoptimes[0]['stop_sequence_original'] not in recorded_stops:
@@ -343,6 +347,7 @@ def generate_calls(run, stoptimes):
         logging.error(repr(err))
         logging.error('failed start-extrapolation. v_id=%s, trip=%d',
                       run[0]['vehicle_id'], run[0]['trip'])
+        logging.error('captured %d stops', len(recorded_stops))
 
     # Now do imputations
     try:
@@ -357,7 +362,6 @@ def generate_calls(run, stoptimes):
 
     except Exception as err:
         logging.error('imputation failure %s %s', repr(err), err)
-        return []
 
     calls.sort(key=lambda x: x[1])
     return calls
@@ -371,7 +375,7 @@ def conf(section):
     }
 
 
-def process_vehicle(vehicle_id, date, rsect, wsect):
+def process_vehicle(vehicle_id, table, date, rsect, wsect):
     source = MySQLdb.connect(**conf(rsect))
     sink = MySQLdb.connect(**conf(wsect))
 
@@ -398,7 +402,7 @@ def process_vehicle(vehicle_id, date, rsect, wsect):
                 calls = generate_calls(run, cursor.fetchall())
 
                 # write calls to sink
-                insert = INSERT.format(vehicle_id, trip_index)
+                insert = INSERT.format(table, vehicle_id, trip_index)
                 sinker.executemany(insert, calls)
                 lenc += len(calls)
 
@@ -409,7 +413,7 @@ def process_vehicle(vehicle_id, date, rsect, wsect):
     source.close()
 
 
-def main(congfig_sections, date, vehicle=None):
+def main(congfig_sections, table, date, vehicle=None):
     # connect to MySQL
     sections = congfig_sections.split(',')
 
@@ -421,7 +425,12 @@ def main(congfig_sections, date, vehicle=None):
             vehicles = fetch_vehicles(cursor, date)
         conn.close()
 
-    itervehicles = zip(vehicles, cycle([date]), cycle(sections), cycle([sections[0]]))
+    itervehicles = zip(vehicles,
+                       cycle([table]),
+                       cycle([date]),
+                       cycle(sections),
+                       cycle([sections[0]])
+                       )
 
     with Pool(os.cpu_count()) as pool:
         pool.starmap(process_vehicle, itervehicles)
