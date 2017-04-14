@@ -292,10 +292,6 @@ def generate_calls(run, stoptimes):
         if call is not None:
             calls.append(call)
 
-    # Bail if we can't impute anything good
-    if len(calls) < len(stoptimes) / 2:
-        return []
-
     recorded_stops = [c[1] for c in calls]
 
     # Optionally add in at start/end stops, easier when we know the next/previous call
