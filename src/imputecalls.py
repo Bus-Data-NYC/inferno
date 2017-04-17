@@ -39,8 +39,9 @@ VEHICLE_QUERY = """SELECT
     st.arrival_time scheduled_time,
     rt.trip_index trip,
     next_stop_id next_stop,
-    pattern_id pattern,
-    GREATEST(0, dist_along_route + d.distance - dist_from_stop) AS dist,
+    tp.pattern_id pattern,
+    dist_from_stop,
+    GREATEST(0, dist_along_route + d.distance - dist_from_stop) AS distance,
     service_date,
     vehicle_id,
     stop_sequence
@@ -93,13 +94,6 @@ def to_unix(dt):
     return (dt - EPOCH).total_seconds()
 
 
-def pairwise(iterable, default=None):
-    "s -> (s0,s1), (s1,s2), (s2, s3), ... (s'n, None)"
-    a, b = tee(iterable)
-    next(b, None)
-    return zip(a, chain(b, [default]))
-
-
 def common(lis):
     return Counter(lis).most_common(1)[0][0]
 
@@ -129,12 +123,11 @@ def filter_positions(cursor, vehicle_id, date):
 
         # If patterns differ, stop sequence goes down, or half an hour passed
         if (position['pattern'] != prev.get('pattern') or
-                (position['stop_sequence'] or -2) < prev.get('stop_sequence', -1) or
-                position['arrival'] > prev.get('arrival') + MAX_TIME_BETWEEN_STOPS):
+                (position['stop_sequence'] or -2) < prev.get('stop_sequence', -1)):
             # start a new run
             runs.append([])
 
-        if position['distance'] < runs[-1]['distance']:
+        if len(runs[-1]) and position['distance'] < runs[-1]['distance']:
             pass
 
         else:
@@ -154,15 +147,6 @@ def fetch_vehicles(cursor, date):
     return [row['vehicle_id'] for row in cursor.fetchall()]
 
 
-def get_last_before(sequence, stop_number):
-    '''Get the last position in a sequence where stop_sequence is <= the stop_number'''
-    # This will raise an IndexError if something goes wrong
-    i, position = [(i, p) for i, p in enumerate(sequence)
-                   if p['stop_sequence'] <= stop_number].pop()
-
-    return i, position
-
-
 def extrapolate(p1, p2, x):
     '''
     Given two coordinates (float, timestamp),
@@ -177,72 +161,39 @@ def extrapolate(p1, p2, x):
     return p2[1] + timedelta(seconds=dx1 * (dy0.total_seconds() / dx0))
 
 
-def find_call(positions, stoptime, next_stoptime):
-    '''
-    Find a "captured" call based on a scheduled stop times and a run of positions.
-    The following scheduled stop time is also used to ensure correct ordering
-    '''
-    # each call is a list of this format:
-    # [rds_index, stop_sequence, datetime, source]
-    try:
-        i, last_before = get_last_before(positions, stoptime['stop_sequence'])
-        first_after = positions[i + 1]
-    except IndexError:
-        return
+def extrap_forward(calls, stoptimes):
+    # the (n-1)th imputed call
+    ssn_ = calls[-2][1]
 
-    next_stoptime = next_stoptime or {'id': first_after['next_stop']}
+    three_stop_times = [x for x in stoptimes if x['stop_sequence'] >= ssn_][:3]
 
-    # got positions that are on either side of this guy
-    if (last_before['next_stop'] == stoptime['id'] and
-            first_after['next_stop'] == next_stoptime['id']):
-        method = 'C'
-        elapsed = first_after['arrival'] - last_before['departure']
-        call_time = last_before['departure'] + timedelta(seconds=elapsed.total_seconds() / 2)
+    p1 = [three_stop_times[0]['shape_dist_traveled'], calls[-2][1]]
+    p2 = [three_stop_times[1]['shape_dist_traveled'], calls[-1][1]]
+    x = three_stop_times[2]['shape_dist_traveled']
 
-        return [stoptime['rds_index'], stoptime['stop_sequence_original'], call_time, method]
+    return [
+        stoptimes[-1]['rds_index'],
+        stoptimes[-1]['stop_sequence_original'],
+        extrapolate(p1, p2, x),
+        'E']
 
 
-def impute_calls(stop_sequence, calls, stoptimes):
-    '''
-    Impute missing calls beginning at stop_sequence
-    The following scheduled stop time is also used to ensure correct ordering
-    '''
-    # each call is a list of this format:
-    # [rds_index, stop_sequence, datetime, source]
-    prev_call = max([c for c in calls if c[1] < stop_sequence], key=lambda x: x[1])
-    next_call = min([c for c in calls if c[1] > stop_sequence], key=lambda x: x[1])
+def extrap_back(calls, stoptimes):
+    ss1 = calls[2][1]
+    # first will be extrapolated using next two
+    three_stop_times = [x for x in stoptimes if x['stop_sequence'] <= ss1][-3:]
+    # latest
+    p1 = [three_stop_times[2]['shape_dist_traveled'], calls[2][2]]
+    # next earliest
+    p2 = [three_stop_times[1]['shape_dist_traveled'], calls[1][2]]
+    # earliest
+    x0 = three_stop_times[0]['shape_dist_traveled']
 
-    st_dict = {x['stop_sequence_original']: x for x in stoptimes}
-    seq2orig = {x['stop_sequence']: x['stop_sequence_original'] for x in stoptimes}
-    next_st, prev_st = st_dict[next_call[1]], st_dict[prev_call[1]]
-
-    # Duration between the two stops divided by the scheduled duration
-    ratio = (next_call[2] - prev_call[2]).total_seconds() / \
-        max(1., (next_st['time'] - prev_st['time']).total_seconds())
-
-    output = []
-    deltasum = timedelta(seconds=0)
-    # Interpolate the particular (missing) stop number between the two positions
-    for seq in range(prev_st['stop_sequence'] + 1, next_st['stop_sequence']):
-        orig_seq = seq2orig[seq]
-        orig_seq_prev = seq2orig[seq - 1]
-        try:
-            # scheduled time between this stop and immediate previous stop
-            scheduled_call_elapsed = (st_dict[orig_seq]['time'] - st_dict[orig_seq_prev]['time']).total_seconds()
-
-            # delta is schedule * ratio
-            deltasum += timedelta(seconds=scheduled_call_elapsed * ratio)
-
-            output.append([st_dict[orig_seq]['rds_index'],
-                           st_dict[orig_seq]['stop_sequence_original'],
-                           prev_call[2] + deltasum,
-                           'I'])
-
-        except KeyError as err:
-            logging.error('KeyError (2) seq: %s, key: %s', seq, err)
-            raise err
-
-    return output
+    return [
+        three_stop_times[0]['rds_index'],
+        three_stop_times[0]['stop_sequence'],
+        extrapolate(p1, p2, x0),
+        'S']
 
 
 def generate_calls(run, stoptimes):
@@ -288,21 +239,8 @@ def generate_calls(run, stoptimes):
     # Extrapolate forward to the next stop after the positions
     try:
         if ei < len(stoptimes):
-            # the (n-1)th imputed call
-            ssn_ = calls[-2][1]
-
-            three_stop_times = [x for x in stoptimes if x['stop_sequence'] >= ssn_][:3]
-
-            p1 = [three_stop_times[0]['shape_dist_traveled'], calls[-2][1]]
-            p2 = [three_stop_times[1]['shape_dist_traveled'], calls[-1][1]]
-            x = three_stop_times[2]['shape_dist_traveled']
-
-            calls.append([
-                stoptimes[-1]['rds_index'],
-                stoptimes[-1]['stop_sequence_original'],
-                extrapolate(p1, p2, x),
-                'E']
-            )
+            call = extrap_forward(calls, stoptimes)
+            calls.append(call)
 
     except Exception as err:
         logging.error(repr(err))
@@ -313,22 +251,8 @@ def generate_calls(run, stoptimes):
     # Extrapolate back for the first stop before the positions
     try:
         if si > 0:
-            ss1 = calls[2][1]
-            # first will be extrapolated using next two
-            three_stop_times = [x for x in stoptimes if x['stop_sequence'] <= ss1][-3:]
-            # latest
-            p1 = [three_stop_times[2]['shape_dist_traveled'], calls[2][2]]
-            # next earliest
-            p2 = [three_stop_times[1]['shape_dist_traveled'], calls[1][2]]
-            # earliest
-            x0 = three_stop_times[0]['shape_dist_traveled']
-
-            calls.insert(0, [
-                three_stop_times[0]['rds_index'],
-                three_stop_times[0]['stop_sequence'],
-                extrapolate(p1, p2, x0),
-                'S']
-            )
+            call = extrap_back(calls, stoptimes)
+            calls.insert(0, call)
 
     except Exception as err:
         logging.error(repr(err))
