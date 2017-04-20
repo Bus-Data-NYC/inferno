@@ -7,7 +7,7 @@ from multiprocessing import Pool
 import logging
 from datetime import timedelta
 from collections import Counter
-from itertools import chain, cycle, tee
+from itertools import chain, compress, cycle
 import numpy as np
 import MySQLdb
 import MySQLdb.cursors
@@ -44,7 +44,7 @@ VEHICLE_QUERY = """SELECT
     GREATEST(0, dist_along_route + d.distance - dist_from_stop) AS distance,
     service_date,
     vehicle_id,
-    stop_sequence
+    stop_sequence AS seq
 FROM positions p
     INNER JOIN ref_trips rt ON (rt.trip_id = p.trip_id)
     LEFT JOIN ref_trip_patterns tp ON (rt.trip_index = tp.trip_index)
@@ -75,7 +75,7 @@ SELECT_VEHICLE = """SELECT DISTINCT vehicle_id
     FROM positions WHERE service_date = %s"""
 
 SELECT_TRIP_INDEX = """SELECT
-    st.stop_id id, arrival_time AS time, rds_index, stop_sequence, shape_dist_traveled
+    st.stop_id id, arrival_time AS time, rds_index, stop_sequence AS seq, shape_dist_traveled
     FROM ref_stop_times st
     LEFT JOIN ref_trips t USING (trip_index)
     LEFT JOIN ref_stop_distances d ON (st.stop_id = d.stop_id and d.shape_id = t.shape_id)
@@ -96,6 +96,12 @@ def to_unix(dt):
 
 def common(lis):
     return Counter(lis).most_common(1)[0][0]
+
+
+def mask(positions, key):
+    filt = (key(x, y) for x, y in zip(positions[1:], positions))
+    ch = chain([True], filt)
+    return list(compress(positions, ch))
 
 
 def filter_positions(cursor, vehicle_id, date):
@@ -123,7 +129,7 @@ def filter_positions(cursor, vehicle_id, date):
 
         # If patterns differ, stop sequence goes down, or half an hour passed
         if (position['pattern'] != prev.get('pattern') or
-                (position['stop_sequence'] or -2) < prev.get('stop_sequence', -1)):
+                (position['seq'] or -2) < prev.get('seq', -1)):
             # start a new run
             runs.append([])
 
@@ -137,7 +143,8 @@ def filter_positions(cursor, vehicle_id, date):
         position = cursor.fetchone()
 
     # filter out any runs that start the next day
-    runs = [run for run in runs if run[0]['service_date'].isoformat() == date]
+    # mask runs to eliminate out-of-order stop sequences
+    runs = [mask(run, lambda x, y: x['seq'] >= y['seq']) for run in runs if run[0]['service_date'].isoformat() == date]
 
     return runs
 
@@ -165,7 +172,7 @@ def extrap_forward(calls, stoptimes):
     # the (n-1)th imputed call
     ssn_ = calls[-2][1]
 
-    three_stop_times = [x for x in stoptimes if x['stop_sequence'] >= ssn_][:3]
+    three_stop_times = [x for x in stoptimes if x['seq'] >= ssn_][:3]
 
     p1 = [three_stop_times[0]['shape_dist_traveled'], calls[-2][1]]
     p2 = [three_stop_times[1]['shape_dist_traveled'], calls[-1][1]]
@@ -173,7 +180,7 @@ def extrap_forward(calls, stoptimes):
 
     return [
         stoptimes[-1]['rds_index'],
-        stoptimes[-1]['stop_sequence_original'],
+        stoptimes[-1]['seq'],
         extrapolate(p1, p2, x),
         'E']
 
@@ -181,7 +188,7 @@ def extrap_forward(calls, stoptimes):
 def extrap_back(calls, stoptimes):
     ss1 = calls[2][1]
     # first will be extrapolated using next two
-    three_stop_times = [x for x in stoptimes if x['stop_sequence'] <= ss1][-3:]
+    three_stop_times = [x for x in stoptimes if x['seq'] <= ss1][-3:]
     # latest
     p1 = [three_stop_times[2]['shape_dist_traveled'], calls[2][2]]
     # next earliest
@@ -191,7 +198,7 @@ def extrap_back(calls, stoptimes):
 
     return [
         three_stop_times[0]['rds_index'],
-        three_stop_times[0]['stop_sequence'],
+        three_stop_times[0]['seq'],
         extrapolate(p1, p2, x0),
         'S']
 
@@ -214,20 +221,20 @@ def generate_calls(run, stoptimes):
 
     # set start index to the stop that first position (P.0) is approaching
     try:
-        si = stoptimes.index([x for x in stoptimes if x['stop_sequence'] == run[0]['stop_sequence']][0])
+        si = stoptimes.index([x for x in stoptimes if x['seq'] == run[0]['seq']][0])
     except (IndexError, AttributeError):
         si = len(stoptimes)
 
     # set end index to the stop approached by the last position (P.n) (which means it won't be used in interp)
     try:
-        ei = [x for x in stoptimes if x['stop_sequence'] == run[-1]['stop_sequence']][0]
+        ei = [x for x in stoptimes if x['seq'] == run[-1]['seq']][0]
     except (AttributeError, IndexError):
         ei = None
 
     interpolated = np.interp(stop_positions[si:ei], obs_distances, obs_times)
     calls = [
         [stop['rds_index'],
-         stop['stop_sequence'],
+         stop['seq'],
          datetime.utcfromtimestamp(secs).replace(tzinfo=pytz.UTC).astimezone(EST),
          'I']
         for stop, secs in zip(stoptimes, interpolated)
