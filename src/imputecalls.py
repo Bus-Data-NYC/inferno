@@ -9,9 +9,9 @@ from datetime import timedelta
 from collections import Counter
 from itertools import chain, compress, cycle
 import numpy as np
-import MySQLdb
-import MySQLdb.cursors
 import pytz
+import psycopg2
+from psycopg2.extras import NamedTupleCursor
 
 '''
 Goal: from bustime positions, impute stop calls. Each output row should contain:
@@ -147,11 +147,6 @@ def filter_positions(cursor, vehicle_id, date):
     runs = [mask(run, lambda x, y: x['seq'] >= y['seq']) for run in runs if run[0]['service_date'].isoformat() == date]
 
     return runs
-
-
-def fetch_vehicles(cursor, date):
-    cursor.execute(SELECT_VEHICLE, (date,))
-    return [row['vehicle_id'] for row in cursor.fetchall()]
 
 
 def extrapolate(p1, p2, x):
@@ -316,23 +311,21 @@ def process_vehicle(vehicle_id, table, date, rsect, wsect):
     source.close()
 
 
-def main(congfig_sections, table, date, vehicle=None):
+def main(connectionstring, table, date, vehicle=None):
     # connect to MySQL
-    sections = congfig_sections.split(',')
 
     if vehicle:
         vehicles = [vehicle]
     else:
-        conn = MySQLdb.connect(**conf(sections[0]))
-        with conn.cursor() as cursor:
-            vehicles = fetch_vehicles(cursor, date)
-        conn.close()
+        with psycopg2.connect(connectionstring) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(SELECT_VEHICLE, (date,))
+                vehicles = [x[0] for x in cursor.fetchall()]
 
     itervehicles = zip(vehicles,
                        cycle([table]),
                        cycle([date]),
-                       cycle(sections),
-                       cycle([sections[0]])
+                       cycle([connectionstring])
                        )
 
     with Pool(os.cpu_count()) as pool:
