@@ -43,48 +43,55 @@ VEHICLE_QUERY = """SELECT
     p.trip_id,
     service_date,
     next_stop_id next_stop,
-    sdas.stop_sequence seq,
+    st.stop_sequence seq,
     dist_along_route,
     dist_along_shape,
     dist_from_stop,
     dist_along_shape - dist_from_stop AS distance
 FROM positions p
     LEFT JOIN gtfs_trips t USING (trip_id)
-    LEFT JOIN gtfs_stop_times st ON (p.trip_id = st.trip_id AND p.next_stop_id::text = st.stop_id)
-    INNER JOIN gtfs_stop_distances_along_shape sdas ON (t.shape_id = sdas.shape_id AND p.next_stop_id::integer = sdas.stop_id::integer)
+    LEFT JOIN gtfs_stop_times st USING (trip_id)
+    INNER JOIN gtfs_stop_distances_along_shape sdas USING (shape_id)
 WHERE
-    vehicle_id = %s
+    vehicle_id = %(vehicle)s
+    AND p.next_stop_id = st.stop_id
+    AND t.feed_index = st.feed_index
+    AND t.feed_index = sdas.feed_index
+    AND p.next_stop_id = sdas.stop_id
     AND (
-        service_date = %s
+        service_date = DATE %(date)s
         OR (
-            DATE(timestamp_utc::TIMESTAMP WITH TIME ZONE AT TIME ZONE 'EST') = DATE %s - INTERVAL '1 DAY'
+            DATE(timestamp_utc::TIMESTAMP WITH TIME ZONE AT TIME ZONE 'EST') = DATE %(date)s - INTERVAL '1 DAY'
             AND EXTRACT(HOUR FROM timestamp_utc::TIMESTAMP WITH TIME ZONE AT TIME ZONE 'EST') > 23
         )
         OR (
-            DATE(timestamp_utc::TIMESTAMP WITH TIME ZONE AT TIME ZONE 'EST') = DATE %s + INTERVAL '1 DAY'
+            DATE(timestamp_utc::TIMESTAMP WITH TIME ZONE AT TIME ZONE 'EST') = DATE %(date)s + INTERVAL '1 DAY'
             AND EXTRACT(HOUR FROM timestamp_utc::TIMESTAMP WITH TIME ZONE AT TIME ZONE 'EST') < 4
         )
     )
-ORDER BY trip_id, st.stop_sequence, timestamp_utc;
+ORDER BY
+    trip_id,
+    st.stop_sequence,
+    timestamp_utc
 """
 
 SELECT_VEHICLE = """SELECT DISTINCT vehicle_id
     FROM positions WHERE service_date = %s"""
 
 SELECT_TRIP_INDEX = """SELECT
-    st.stop_id id,
+    stop_id id,
     arrival_time AS time,
-    t.route_id,
-    t.direction_id,
+    route_id,
+    gtfs_trips.direction_id,
     stop_id,
-    st.stop_sequence AS seq,
-    sdas.dist_along_shape
-FROM gtfs_trips t
-    LEFT JOIN gtfs_stop_times st USING (trip_id)
-    LEFT JOIN gtfs_stops s USING (stop_id)
-    LEFT JOIN gtfs_stop_distances_along_shape sdas USING (shape_id, stop_id)
+    stop_sequence AS seq,
+    dist_along_shape
+FROM gtfs_trips
+    LEFT JOIN gtfs_stop_times USING (feed_index, trip_id)
+    LEFT JOIN gtfs_stops USING (feed_index, stop_id)
+    LEFT JOIN gtfs_stop_distances_along_shape USING (feed_index, shape_id, stop_id)
 WHERE trip_id = %s
-ORDER BY st.stop_sequence ASC
+ORDER BY stop_sequence ASC;
 """
 
 INSERT = """INSERT INTO {}
