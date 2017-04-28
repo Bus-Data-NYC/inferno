@@ -12,7 +12,6 @@ from itertools import chain, compress, cycle
 import numpy as np
 import pytz
 import psycopg2
-from psycopg2.extras import NamedTupleCursor
 
 '''
 Goal: from bustime positions, impute stop calls. Each output row should contain:
@@ -27,6 +26,12 @@ loghandler.setFormatter(logformatter)
 logger.addHandler(loghandler)
 
 warnings.simplefilter('ignore', np.RankWarning)
+
+DEC2FLOAT = psycopg2.extensions.new_type(
+    psycopg2.extensions.DECIMAL.values,
+    'DEC2FLOAT',
+    lambda value, curs: float(value) if value is not None else None
+)
 
 # Maximum elapsed time between positions before we declare a new run
 MAX_TIME_BETWEEN_STOPS = timedelta(seconds=60 * 30)
@@ -96,12 +101,10 @@ ORDER BY stop_sequence ASC;
 
 INSERT = """INSERT INTO {}
     (vehicle_id, trip_id, route_id, direction_id, stop_id, call_time, source)
-    VALUES ({}, '{}', %s, %s, %s, %s, %s)"""
+    VALUES ({}, '{}', %(route_id)s, %(direction_id)s, %(stop_id)s, %(call_time)s, %(source)s)"""
 
 EPOCH = datetime.utcfromtimestamp(0)
 EST = pytz.timezone('US/Eastern')
-
-Call = namedtuple('Call', ['route_id', 'direction_id', 'stop_id', 'timestamp', 'method'])
 
 
 def to_unix(dt):
@@ -112,10 +115,14 @@ def common(lis):
     return Counter(lis).most_common(1)[0][0]
 
 
-def mask(positions, key):
+def mask2(positions, key):
     filt = (key(x, y) for x, y in zip(positions[1:], positions))
     ch = chain([True], filt)
     return list(compress(positions, ch))
+
+
+def desc2fn(description):
+    return [d[0] for d in description]
 
 
 def filter_positions(cursor, date):
@@ -132,41 +139,54 @@ def filter_positions(cursor, date):
         departure max
     '''
     runs = []
-    prev = object()
-    position = cursor.fetchone()
+    prev = {}
+    fieldnames = desc2fn(cursor.description)
+    position = dict(zip(fieldnames, cursor.fetchone()))
 
     while position is not None:
-        # If patterns differ, stop sequence goes down, or half an hour passed
-        if (position.trip_id != getattr(prev, 'trip_id', None) or
-                (position.seq or -2) < getattr(prev, 'seq', -1)):
+        # If trip IDs differ
+        if (position['trip_id'] != prev.get('trip_id', None)):
+            if prev.get('trip_id', None):
+                # finish old run
+                runs[-1].append(prev)
             # start a new run
             runs.append([])
 
-        # append the current stop
-        runs[-1].append(position)
+        elif prev.get('next_stop') != position['next_stop']:
+            # append the previous stop
+            runs[-1].append(prev)
+
         prev = position
-        position = cursor.fetchone()
+
+        try:
+            position = dict(zip(fieldnames, cursor.fetchone()))
+        except TypeError:
+            position = None
+
+    if len(runs):
+        # append very last position
+        runs[-1].append(prev)
 
     # filter out any runs that start the next day
     # mask runs to eliminate out-of-order stop sequences
-    runs = [mask(run, lambda x, y: x.seq >= y.seq) for run in runs
-            if run[0].service_date.isoformat() == date
+    runs = [mask2(run, lambda x, y: x['seq'] >= y['seq']) for run in runs
+            if run[0]['service_date'].isoformat() == date
             ]
 
     return runs
 
 
 def call(stoptime, seconds, method=None):
-    return Call(
-        stoptime.route_id,
-        stoptime.direction_id,
-        stoptime.stop_id,
-        datetime.utcfromtimestamp(seconds).replace(tzinfo=pytz.UTC).astimezone(EST),
-        method or 'I'
-    )
+    return {
+        'route_id': stoptime['route_id'],
+        'direction_id': stoptime['direction_id'],
+        'stop_id': stoptime['stop_id'],
+        'call_time': datetime.utcfromtimestamp(seconds).replace(tzinfo=pytz.UTC).astimezone(EST),
+        'source': method or 'I'
+    }
 
 
-def generate_calls(run, stoptimes):
+def generate_calls(run: list, stoptimes: list):
     '''
     list of calls to be written
     Args:
@@ -175,21 +195,21 @@ def generate_calls(run, stoptimes):
     '''
     # each call is a list of this format:
     # [route, direction, stop, stop_sequence, datetime, source]
-    obs_distances = [p.distance for p in run]
-    obs_times = [to_unix(p.timestamp) for p in run]
+    obs_distances = [p['distance'] for p in run]
+    obs_times = [to_unix(p['timestamp']) for p in run]
 
     # purposefully avoid the first and last stops
-    stop_positions = [x.dist_along_shape for x in stoptimes]
+    stop_positions = [x['dist_along_shape'] for x in stoptimes]
 
     # set start index to the stop that first position (P.0) is approaching
     try:
-        si = stoptimes.index([x for x in stoptimes if x.seq == run[0].seq][0])
+        si = stoptimes.index([x for x in stoptimes if x['seq'] == run[0]['seq']][0])
     except (IndexError, AttributeError):
         si = 0
 
     # set end index to the stop approached by the last position (P.n) (which means it won't be used in interp)
     try:
-        ei = stoptimes.index([x for x in stoptimes if x.seq == run[-1].seq][0])
+        ei = stoptimes.index([x for x in stoptimes if x['seq'] == run[-1]['seq']][0])
     except (AttributeError, IndexError):
         ei = len(stoptimes)
 
@@ -202,8 +222,8 @@ def generate_calls(run, stoptimes):
     if len(run) > 3:
         # Extrapolate forward to the next stop after the positions
         if ei < len(stoptimes):
-            coefficients = np.polyfit(obs_distances[-3:], obs_times[-3:], 1)
             try:
+                coefficients = np.polyfit(obs_distances[-3:], obs_times[-3:], 1)
                 extrapolated = np.poly1d(coefficients)(stop_positions[ei])
                 calls.append(call(stoptimes[ei], extrapolated, 'E'))
             except (ValueError, TypeError):
@@ -227,11 +247,11 @@ def generate_calls(run, stoptimes):
 
 
 def process_vehicle(vehicle_id, table, date, connectionstring):
-    with psycopg2.connect(connectionstring, cursor_factory=NamedTupleCursor) as conn:
+    with psycopg2.connect(connectionstring) as conn:
         print('STARTING', vehicle_id, file=sys.stderr)
         with conn.cursor() as cursor:
             # load up cursor with every position for vehicle
-            cursor.execute(VEHICLE_QUERY, (vehicle_id, date, date, date))
+            cursor.execute(VEHICLE_QUERY, {'vehicle': vehicle_id, 'date': date})
             runs = filter_positions(cursor, date)
             lenc = 0
 
@@ -241,14 +261,16 @@ def process_vehicle(vehicle_id, table, date, connectionstring):
                     continue
                 elif len(run) <= 2:
                     logging.info('short run (%d positions), v_id=%s, %s',
-                                 len(run), vehicle_id, run[0].timestamp)
+                                 len(run), vehicle_id, run[0]['timestamp'])
                     continue
 
                 # get the scheduled list of trips for this run
-                trip_id = common([x.trip_id for x in run])
+                trip_id = common([x['trip_id'] for x in run])
 
                 cursor.execute(SELECT_TRIP_INDEX, (trip_id,))
-                calls = generate_calls(run, cursor.fetchall())
+                fieldnames = desc2fn(cursor.description)
+                stoptimes = [dict(zip(fieldnames, row)) for row in cursor.fetchall()]
+                calls = generate_calls(run, stoptimes)
 
                 # write calls to sink
                 insert = INSERT.format(table, vehicle_id, trip_id)
@@ -259,8 +281,8 @@ def process_vehicle(vehicle_id, table, date, connectionstring):
             print('COMMIT', vehicle_id, lenc, file=sys.stderr)
 
 
-def main(connectionstring, table, date, vehicle=None):
-    # connect to MySQL
+def main(connectionstring: str, table, date, vehicle=None):
+    psycopg2.extensions.register_type(DEC2FLOAT)
 
     if vehicle:
         vehicles = [vehicle]
