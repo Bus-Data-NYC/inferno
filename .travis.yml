@@ -1,0 +1,25 @@
+language: python
+
+python:
+  - 3.5
+
+services: 
+  - postgresql
+
+git:
+  depth: 3
+
+before_install:
+  - createdb nycbus
+
+install:
+  - git clone --depth 1 https://github.com/fitnr/nyc-bustime.git
+  - make -C nyc-bustime init download DATE=20170101 DATABASE=nycbus PSQLFLAGS="-U postgres"
+  - make init DATABASE=nycbus
+
+script:
+    - make test PYTHON=python
+    - make calls-day-2017-01-01 PYTHON=python DATABASE=nycbus
+
+after_script:
+    - psql -U postgres -c "SELECT * FROM calls LIMIT 10"

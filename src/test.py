@@ -1,61 +1,40 @@
 #!/user/bin/env python3
-from datetime import datetime, timedelta
 import unittest
+import psycopg2
 import imputecalls
+import pytz
 import data.positions
 
 
 class TestImpute(unittest.TestCase):
 
-    def test_extrapolate_start(self):
-        # call format:
-        # [rds_index, stop_sequence, datetime, source]
-        call_1 = [11188, 2, datetime(2016, 1, 1, 11, 1, 18), 'C']
-        call_2 = [11189, 3, datetime(2016, 1, 1, 11, 1, 51), 'C']
-
-        stoptime_1 = {
-            'id': 551247,
-            'time': timedelta(hours=11),
-            'rds_index': 11187,
-            'stop_sequence': 1
-        }
-        stoptime_2 = {
-            'id': 551248,
-            'time': timedelta(hours=11, minutes=1),
-            'rds_index': 11188,
-            'stop_sequence': 2
-        }
-
-        # extrapolate back
-        delta = imputecalls.extrapolate(call_1, call_2, stoptime_1, stoptime_2)
-
-        assert call_1[2] - delta < call_1[2]
-
-    def test_extrapolate_end(self):
-        call_1 = [11188, 2, datetime(2016, 1, 1, 11, 1, 18), 'C']
-        call_2 = [11189, 3, datetime(2016, 1, 1, 11, 1, 51), 'C']
-
-        stoptime_1 = {
-            'id': 551247,
-            'time': timedelta(hours=11),
-            'rds_index': 11187,
-            'stop_sequence': 1
-        }
-        stoptime_2 = {
-            'id': 551248,
-            'time': timedelta(hours=11, minutes=1),
-            'rds_index': 11188,
-            'stop_sequence': 2
-        }
-
-        # extrapolate back
-        delta = imputecalls.extrapolate(call_1, call_2, stoptime_1, stoptime_2)
-
-        assert call_1[2] + delta > call_1[2]
+    connstr = 'dbname=nycbus'
 
     def test_calls(self):
-        for run in data.positions.runs:
-            calls = imputecalls.generate_calls(run, data.positions.stoptimes)
+        calls = imputecalls.generate_calls(data.positions.run, data.positions.stoptimes)
+
+        # No duplicates
+        assert len(calls) == len(set(c['call_time'] for c in calls))
+
+        # Monotonically increasing
+        prev = calls[0]['call_time']
+
+        for call in calls[1:]:
+            assert call['call_time'] > prev
+            prev = call['call_time']
+
+        imputecalls.main(self.connstr, table='calls', date='2017-05-20', vehicle='8500')
+
+        trip = data.positions.run[0]['trip_id']
+
+        calltimes = [x['call_time'].time() for x in calls]
+
+        with psycopg2.connect(self.connstr) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute('SELECT call_time FROM calls WHERE trip_id = %s', (trip,))
+
+                for row in cursor.fetchall():
+                    self.assertIn(row[0].time(), calltimes)
 
 
 if __name__ == '__main__':

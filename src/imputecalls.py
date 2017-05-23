@@ -235,8 +235,12 @@ def generate_calls(run: list, stoptimes: list):
                 coefficients = np.polyfit(obs_distances[-3:], obs_times[-3:], 1)
                 extrapolated = np.poly1d(coefficients)(stop_positions[ei])
                 calls.append(call(stoptimes[ei], extrapolated, 'E'))
-            except (ValueError, TypeError):
+            except ValueError:
                 pass
+            except TypeError:
+                logging.error(run[0])
+                logging.error(ei)
+                logging.error(stop_positions[:si])
 
         # Extrapolate back for a single stop before the positions
         if si > 0:
@@ -247,10 +251,9 @@ def generate_calls(run: list, stoptimes: list):
             except ValueError:
                 pass
             except TypeError:
-                print(run[0])
-                print(si)
-                print(coefficients)
-                print(stop_positions[:si])
+                logging.error(run[0])
+                logging.error(si)
+                logging.error(stop_positions[:si])
 
     return calls
 
