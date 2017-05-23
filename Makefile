@@ -19,7 +19,7 @@ $(addprefix calls-2016-,$(months)): calls-2016-%:
 		xargs | awk '{print $$NF}' | xargs -n 1 /usr/bin/seq -w 1))
 
 calls-day-%:
-	$(PYTHON) src/imputecalls.py "dbname=$(DATABASE) $(PSQLFLAGS)" $(TABLE) $*
+	$(PYTHON) src/inferno.py "dbname=$(DATABASE) $(PSQLFLAGS)" $(TABLE) $*
 
 test:
 	$(PYTHON) src/test.py

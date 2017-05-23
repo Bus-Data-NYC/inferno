@@ -1,8 +1,7 @@
 #!/user/bin/env python3
 import unittest
 import psycopg2
-import imputecalls
-import pytz
+import inferno
 import data.positions
 
 
@@ -11,7 +10,7 @@ class TestImpute(unittest.TestCase):
     connstr = 'dbname=nycbus'
 
     def test_calls(self):
-        calls = imputecalls.generate_calls(data.positions.run, data.positions.stoptimes)
+        calls = inferno.generate_calls(data.positions.run, data.positions.stoptimes)
 
         # No duplicates
         assert len(calls) == len(set(c['call_time'] for c in calls))
@@ -23,7 +22,7 @@ class TestImpute(unittest.TestCase):
             assert call['call_time'] > prev
             prev = call['call_time']
 
-        imputecalls.main(self.connstr, table='calls', date='2017-05-20', vehicle='8500')
+        inferno.main(self.connstr, table='calls', date='2017-05-20', vehicle='8500')
 
         trip = data.positions.run[0]['trip_id']
 
