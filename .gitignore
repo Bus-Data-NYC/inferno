@@ -2,7 +2,6 @@
 *.xz
 *.zip
 *.bin
-mytransit
 *.tsv
 *.pyc
 *.csv

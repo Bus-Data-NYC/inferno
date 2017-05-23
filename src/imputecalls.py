@@ -7,7 +7,7 @@ from multiprocessing import Pool
 import logging
 import warnings
 from datetime import timedelta
-from collections import Counter, namedtuple
+from collections import Counter
 from itertools import chain, compress, cycle
 import numpy as np
 import pytz
@@ -125,7 +125,7 @@ def desc2fn(description):
     return [d[0] for d in description]
 
 
-def filter_positions(cursor, date):
+def filter_positions(cursor, date, vehicle=None):
     '''
     Compile list of positions for a vehicle, using a list of positions
     and filtering based on positions that reflect change in pattern or next_stop.
@@ -141,6 +141,10 @@ def filter_positions(cursor, date):
     runs = []
     prev = {}
     fieldnames = desc2fn(cursor.description)
+    if cursor.rowcount == 0:
+        print('No rows found for', date, vehicle, file=sys.stderr)
+        return []
+
     position = dict(zip(fieldnames, cursor.fetchone()))
 
     while position is not None:
@@ -252,7 +256,7 @@ def process_vehicle(vehicle_id, table, date, connectionstring):
         with conn.cursor() as cursor:
             # load up cursor with every position for vehicle
             cursor.execute(VEHICLE_QUERY, {'vehicle': vehicle_id, 'date': date})
-            runs = filter_positions(cursor, date)
+            runs = filter_positions(cursor, date, vehicle_id)
             lenc = 0
 
             # each run will become a trip
@@ -297,6 +301,9 @@ def main(connectionstring: str, table, date, vehicle=None):
                        cycle([date]),
                        cycle([connectionstring])
                        )
+
+    for i in itervehicles:
+        process_vehicle(*i)
 
     with Pool(os.cpu_count()) as pool:
         pool.starmap(process_vehicle, itervehicles)
