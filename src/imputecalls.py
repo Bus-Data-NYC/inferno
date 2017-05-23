@@ -45,24 +45,20 @@ STOP_THRESHOLD = 30.48
 VEHICLE_QUERY = """SELECT
     timestamp_utc AS timestamp,
     vehicle_id,
-    p.trip_id,
+    trip_id,
     service_date,
-    next_stop_id next_stop,
-    st.stop_sequence seq,
+    stop_id next_stop,
+    stop_sequence seq,
     dist_along_route,
     dist_along_shape,
     dist_from_stop,
     dist_along_shape - dist_from_stop AS distance
 FROM positions p
-    LEFT JOIN gtfs_trips t USING (trip_id)
-    LEFT JOIN gtfs_stop_times st USING (trip_id)
-    INNER JOIN gtfs_stop_distances_along_shape sdas USING (shape_id)
+    LEFT JOIN gtfs_trips USING (trip_id)
+    LEFT JOIN gtfs_stop_times st USING (feed_index, trip_id, stop_id)
+    INNER JOIN gtfs_stop_distances_along_shape USING (feed_index, shape_id, stop_id)
 WHERE
     vehicle_id = %(vehicle)s
-    AND p.next_stop_id = st.stop_id
-    AND t.feed_index = st.feed_index
-    AND t.feed_index = sdas.feed_index
-    AND p.next_stop_id = sdas.stop_id
     AND (
         service_date = DATE %(date)s
         OR (
@@ -76,7 +72,7 @@ WHERE
     )
 ORDER BY
     trip_id,
-    st.stop_sequence,
+    stop_sequence,
     timestamp_utc
 """
 
@@ -140,11 +136,14 @@ def filter_positions(cursor, date, vehicle=None):
     '''
     runs = []
     prev = {}
-    fieldnames = desc2fn(cursor.description)
+
+    # load up cursor with every position for vehicle
+    cursor.execute(VEHICLE_QUERY, {'vehicle': vehicle, 'date': date})
     if cursor.rowcount == 0:
-        print('No rows found for', date, vehicle, file=sys.stderr)
+        logging.warn('No rows found for %s on %s', vehicle, date)
         return []
 
+    fieldnames = desc2fn(cursor.description)
     position = dict(zip(fieldnames, cursor.fetchone()))
 
     while position is not None:
@@ -178,6 +177,12 @@ def filter_positions(cursor, date, vehicle=None):
             ]
 
     return runs
+
+
+def get_stoptimes(cursor, tripid):
+    cursor.execute(SELECT_TRIP_INDEX, (tripid,))
+    fieldnames = desc2fn(cursor.description)
+    return [dict(zip(fieldnames, row)) for row in cursor.fetchall()]
 
 
 def call(stoptime, seconds, method=None):
@@ -250,13 +255,12 @@ def generate_calls(run: list, stoptimes: list):
     return calls
 
 
-def process_vehicle(vehicle_id, table, date, connectionstring):
+def track_vehicle(vehicle_id, table, date, connectionstring):
     with psycopg2.connect(connectionstring) as conn:
-        print('STARTING', vehicle_id, file=sys.stderr)
+        logging.info('STARTING %s', vehicle_id)
         with conn.cursor() as cursor:
-            # load up cursor with every position for vehicle
-            cursor.execute(VEHICLE_QUERY, {'vehicle': vehicle_id, 'date': date})
             runs = filter_positions(cursor, date, vehicle_id)
+            # Counter is just for logging.
             lenc = 0
 
             # each run will become a trip
@@ -264,16 +268,17 @@ def process_vehicle(vehicle_id, table, date, connectionstring):
                 if len(run) == 0:
                     continue
                 elif len(run) <= 2:
-                    logging.info('short run (%d positions), v_id=%s, %s',
+                    logging.debug('short run (%d positions), v_id=%s, %s',
                                  len(run), vehicle_id, run[0]['timestamp'])
                     continue
 
-                # get the scheduled list of trips for this run
+                # Assume most common trip is the correct one.
                 trip_id = common([x['trip_id'] for x in run])
 
-                cursor.execute(SELECT_TRIP_INDEX, (trip_id,))
-                fieldnames = desc2fn(cursor.description)
-                stoptimes = [dict(zip(fieldnames, row)) for row in cursor.fetchall()]
+                # Get the scheduled list of stops for this trip.
+                stoptimes = get_stoptimes(cursor, trip_id)
+
+                # Generate (infer) calls.
                 calls = generate_calls(run, stoptimes)
 
                 # write calls to sink
@@ -282,7 +287,7 @@ def process_vehicle(vehicle_id, table, date, connectionstring):
                 lenc += len(calls)
                 conn.commit()
 
-            print('COMMIT', vehicle_id, lenc, file=sys.stderr)
+            logging.info('COMMIT %s (%s calls)', vehicle_id, lenc)
 
 
 def main(connectionstring: str, table, date, vehicle=None):
@@ -303,12 +308,12 @@ def main(connectionstring: str, table, date, vehicle=None):
                        )
 
     for i in itervehicles:
-        process_vehicle(*i)
+        track_vehicle(*i)
 
     with Pool(os.cpu_count()) as pool:
-        pool.starmap(process_vehicle, itervehicles)
+        pool.starmap(track_vehicle, itervehicles)
 
-    print("SUCCESS: Committed %s" % date, file=sys.stderr)
+    logging.info("SUCCESS: Committed %s", date)
 
 
 if __name__ == '__main__':
