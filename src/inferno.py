@@ -93,21 +93,26 @@ INSERT = """INSERT INTO {}
 EPOCH = datetime.utcfromtimestamp(0)
 
 
-def to_unix(dt):
+def to_unix(dt: datetime) -> int:
     return (dt - EPOCH).total_seconds()
 
 
-def common(lis):
+def common(lis: list):
     return Counter(lis).most_common(1)[0][0]
 
 
-def mask2(positions, key):
-    filt = (key(x, y) for x, y in zip(positions[1:], positions))
+def mask2(lis: list, key: function) -> list:
+    '''
+    Create a mask on `lis` using the `key` function.
+    `key` will be evaluated on pairs of items in `lis`.
+    Returned list will only include items where `key` evaluates to True.
+    '''
+    filt = (key(x, y) for x, y in zip(lis[1:], lis))
     ch = chain([True], filt)
-    return list(compress(positions, ch))
+    return list(compress(lis, ch))
 
 
-def desc2fn(description):
+def desc2fn(description: list) -> list:
     return [d[0] for d in description]
 
 
@@ -190,7 +195,7 @@ def call(stoptime, seconds, method=None):
     }
 
 
-def generate_calls(run: list, stoptimes: list):
+def generate_calls(run: list, stoptimes: list) -> list:
     '''
     list of calls to be written
     Args:
