@@ -1,12 +1,12 @@
-#!/user/bin/env python3
+#!/user/bin/env python3.5
 from __future__ import division
 import sys
 import os
-from datetime import datetime
+from typing import Callable
+from datetime import datetime, timedelta
 from multiprocessing import Pool
 import logging
 import warnings
-from datetime import timedelta
 from collections import Counter
 from itertools import chain, compress, cycle
 import numpy as np
@@ -101,7 +101,7 @@ def common(lis: list):
     return Counter(lis).most_common(1)[0][0]
 
 
-def mask2(lis: list, key: function) -> list:
+def mask2(lis: list, key: Callable) -> list:
     '''
     Create a mask on `lis` using the `key` function.
     `key` will be evaluated on pairs of items in `lis`.
@@ -135,7 +135,7 @@ def filter_positions(cursor, date, vehicle=None):
     # load up cursor with every position for vehicle
     cursor.execute(VEHICLE_QUERY, {'vehicle': vehicle, 'date': date})
     if cursor.rowcount == 0:
-        logging.warn('No rows found for %s on %s', vehicle, date)
+        logging.warning('No rows found for %s on %s', vehicle, date)
         return []
 
     fieldnames = desc2fn(cursor.description)
