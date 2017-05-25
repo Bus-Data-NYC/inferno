@@ -13,10 +13,6 @@ import numpy as np
 import pytz
 import psycopg2
 
-'''
-Goal: from bustime positions, impute stop calls. Each output row should contain:
-vehicle_id, trip_index, stop_sequence, arrival_time, departure_time, source (??).
-'''
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -206,12 +202,8 @@ def generate_calls(run: list, stoptimes: list):
         run: list generated from enumerate(positions)
         stoptimes: list of scheduled stoptimes for this trip
     '''
-    # each call is a list of this format:
-    # [route, direction, stop, stop_sequence, datetime, source]
     obs_distances = [p['distance'] for p in run]
     obs_times = [to_unix(p['timestamp']) for p in run]
-
-    # purposefully avoid the first and last stops
     stop_positions = [x['dist_along_shape'] for x in stoptimes]
 
     # set start index to the stop that first position (P.0) is approaching
@@ -242,9 +234,8 @@ def generate_calls(run: list, stoptimes: list):
             except ValueError:
                 pass
             except TypeError:
-                logging.error(run[0])
-                logging.error(ei)
-                logging.error(stop_positions[:si])
+                logging.error('Error extrapolating early stops. index: %s', ei)
+                logging.error('Stop position %s', stop_positions[ei])
 
         # Extrapolate back for a single stop before the positions
         if si > 0:
@@ -255,9 +246,8 @@ def generate_calls(run: list, stoptimes: list):
             except ValueError:
                 pass
             except TypeError:
-                logging.error(run[0])
-                logging.error(si)
-                logging.error(stop_positions[:si])
+                logging.error('Error extrapolating early stops. index: %s', si)
+                logging.error('Stop position %s', stop_positions[si])
 
     return calls
 
