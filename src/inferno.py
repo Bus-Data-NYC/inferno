@@ -38,7 +38,7 @@ MAX_TIME_BETWEEN_STOPS = timedelta(seconds=60 * 30)
 STOP_THRESHOLD = 30.48
 
 VEHICLE_QUERY = """SELECT
-    timestamp_utc AS timestamp,
+    EXTRACT(EPOCH FROM timestamp_utc) AS timestamp,
     vehicle_id,
     trip_id,
     service_date,
@@ -89,12 +89,6 @@ ORDER BY stop_sequence ASC;
 INSERT = """INSERT INTO {}
     (vehicle_id, trip_id, route_id, direction_id, stop_id, call_time, source)
     VALUES ({}, '{}', %(route_id)s, %(direction_id)s, %(stop_id)s, %(call_time)s, %(source)s)"""
-
-EPOCH = datetime.utcfromtimestamp(0)
-
-
-def to_unix(dt: datetime) -> int:
-    return (dt - EPOCH).total_seconds()
 
 
 def common(lis: list):
@@ -203,7 +197,7 @@ def generate_calls(run: list, stoptimes: list) -> list:
         stoptimes: list of scheduled stoptimes for this trip
     '''
     obs_distances = [p['distance'] for p in run]
-    obs_times = [to_unix(p['timestamp']) for p in run]
+    obs_times = [p['timestamp'] for p in run]
     stop_positions = [x['dist_along_shape'] for x in stoptimes]
 
     # set start index to the stop that first position (P.0) is approaching
