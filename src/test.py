@@ -1,39 +1,87 @@
-#!/user/bin/env python3
+#!/user/bin/env python3.5
+from os import path
+from collections import namedtuple
 import unittest
 import psycopg2
 import inferno
-import data.positions
 
 
-class TestImpute(unittest.TestCase):
+def increasing(L):
+    return all(x <= y for x, y in zip(L, L[1:]))
 
+
+def monotonically_increasing(L):
+    return all(x <= y for x, y in zip(L, L[1:]))
+
+
+class TestInferno(unittest.TestCase):
+
+    dirname = path.dirname(__file__)
     connstr = 'dbname=nycbus'
+    vehicle_id = 8500
+    service_date = '2017-05-20'
+
+    @classmethod
+    def setUpClass(cls):
+        psycopg2.extensions.register_type(inferno.DEC2FLOAT)
+        cls._connection = psycopg2.connect(cls.connstr)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._connection.close()
 
     def test_calls(self):
-        calls = inferno.generate_calls(data.positions.run, data.positions.stoptimes)
+        with self._connection.cursor() as cursor:
+            runs = inferno.filter_positions(cursor, self.service_date, self.vehicle_id)
+            run = runs[0]
+            trip = inferno.common([x['trip_id'] for x in run])
+            stoptimes = inferno.get_stoptimes(cursor, trip)
+
+        calls = inferno.generate_calls(run, stoptimes)
 
         # No duplicates
         assert len(calls) == len(set(c['call_time'] for c in calls))
 
         # Monotonically increasing
-        prev = calls[0]['call_time']
+        self.assertTrue(monotonically_increasing([x['call_time'] for x in calls]))
 
-        for call in calls[1:]:
-            assert call['call_time'] > prev
-            prev = call['call_time']
+    def test_vehicle_query(self):
+        args = {'vehicle': self.vehicle_id, 'date': self.service_date}
 
-        inferno.main(self.connstr, table='calls', date='2017-05-20', vehicle='8500')
+        with self._connection.cursor() as curs:
+            curs.execute(inferno.VEHICLE_QUERY, args)
+            self.assertEqual(902, len(curs.fetchall()))
 
-        trip = data.positions.run[0]['trip_id']
+    def test_common(self):
+        a = ['a', 'a', 'b']
+        self.assertEqual('a', inferno.common(a))
+        b = ['a', 'a', 'b', 'c', 'd', 'D']
+        self.assertEqual('a', inferno.common(b))
 
-        calltimes = [x['call_time'].time() for x in calls]
+    def test_mask(self):
+        a = [1, 2, False, 3]
+        def key(a, b):
+            return a and b
+        self.assertSequenceEqual([1, 2], inferno.mask2(a, key))
 
-        with psycopg2.connect(self.connstr) as conn:
-            with conn.cursor() as cursor:
-                cursor.execute('SELECT call_time FROM calls WHERE trip_id = %s', (trip,))
+    def test_desc2fn(self):
+        nt = namedtuple('a', ['name'])
+        a = [nt('foo'), nt('bar')]
+        self.assertSequenceEqual(('foo', 'bar'), inferno.desc2fn(a))
 
-                for row in cursor.fetchall():
-                    self.assertIn(row[0].time(), calltimes)
+    def test_filter_positions(self):
+        with self._connection.cursor() as cursor:
+            runs = inferno.filter_positions(cursor, self.service_date, self.vehicle_id)
+
+        self.assertIsInstance(runs, list)
+
+        for run in runs:
+            # Same vehicle in every run
+            assert set([r['vehicle_id'] for r in run]) == set([self.vehicle_id])
+            # Only one trip id per run
+            assert len(set([r['trip_id'] for r in run])) == 1
+            # increasing distance
+            self.assertTrue(increasing([r['distance'] for r in run]))
 
 
 if __name__ == '__main__':

@@ -44,14 +44,12 @@ VEHICLE_QUERY = """SELECT
     service_date,
     stop_id next_stop,
     stop_sequence seq,
-    dist_along_route,
-    dist_along_shape,
-    dist_from_stop,
-    dist_along_shape - dist_from_stop AS distance
+    ROUND(ST_LineLocatePoint(s.the_geom, ST_SetSRID(ST_MakePoint(longitude, latitude), 4326))::NUMERIC * ST_Length(s.the_geom::geography)::NUMERIC,
+        2) distance
 FROM positions p
     LEFT JOIN gtfs_trips USING (trip_id)
     LEFT JOIN gtfs_stop_times st USING (feed_index, trip_id, stop_id)
-    INNER JOIN gtfs_stop_distances_along_shape USING (feed_index, shape_id, stop_id)
+    LEFT JOIN gtfs_shape_geoms s USING (feed_index, shape_id)
 WHERE
     vehicle_id = %(vehicle)s
     AND (
@@ -106,9 +104,16 @@ def mask2(lis: list, key: Callable) -> list:
     return list(compress(lis, ch))
 
 
-def desc2fn(description: list) -> list:
-    return [d[0] for d in description]
+def desc2fn(description: tuple) -> tuple:
+    '''Extract tuple of field names from psycopg2 cursor.description.'''
+    return tuple(d.name for d in description)
 
+def compare_seq(x, y):
+    try:
+        return x['seq'] >= y['seq']
+    except TypeError:
+        # Be lenient when there's bad data: return True when None.
+        return x['seq'] is None or y['seq'] is None
 
 def filter_positions(cursor, date, vehicle=None):
     '''
@@ -161,7 +166,7 @@ def filter_positions(cursor, date, vehicle=None):
 
     # filter out any runs that start the next day
     # mask runs to eliminate out-of-order stop sequences
-    runs = [mask2(run, lambda x, y: x['seq'] >= y['seq']) for run in runs
+    runs = [mask2(run, compare_seq) for run in runs
             if run[0]['service_date'].isoformat() == date
             ]
 

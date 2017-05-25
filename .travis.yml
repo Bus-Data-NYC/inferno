@@ -13,9 +13,11 @@ before_install:
   - createdb nycbus
 
 install:
-  - git clone --depth 1 https://github.com/fitnr/nyc-bustime.git
-  - make -C nyc-bustime init download DATE=20170101 DATABASE=nycbus PSQLFLAGS="-U postgres"
   - make init DATABASE=nycbus
+  - pip install coverage
+  - psql nycbus -q -f src/test_data/schema.sql 
+  - psql nycbus -q -f src/test_data/positions.sql -f src/test_data/stop_times.sql
+  - psql nycbus -q -f src/test_data/trips.sql -f src/test_data/stop_distances.sql
 
 script:
     - make test PYTHON=python
@@ -23,3 +25,4 @@ script:
 
 after_script:
     - psql -U postgres -c "SELECT * FROM calls LIMIT 10"
+    - coverage report

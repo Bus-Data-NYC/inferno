@@ -1,6 +1,6 @@
 shell = bash
 
-PYTHON = python3
+PYTHON = python3.5
 
 PSQLFLAGS =
 DATABASE = nycbus
@@ -22,7 +22,8 @@ calls-day-%:
 	$(PYTHON) src/inferno.py "dbname=$(DATABASE) $(PSQLFLAGS)" $(TABLE) $*
 
 test:
-	$(PYTHON) src/test.py
+	$(PYTHON) -m coverage run src/test.py
 
-init: sql/calls.sql
-	$(PSQL) < $<
+init:
+	$(PSQL) -f sql/calls.sql
+	$(PYTHON) -m pip install -r requirements.txt
