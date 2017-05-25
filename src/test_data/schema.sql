@@ -1,8 +1,29 @@
+DROP TABLE IF EXISTS positions;
 DROP TABLE IF EXISTS gtfs_trips cascade;
 DROP TABLE IF EXISTS gtfs_stop_times cascade;
 DROP TABLE IF EXISTS gtfs_stop_distances_along_shape;
 
 BEGIN;
+
+CREATE TABLE positions (
+    timestamp_utc TIMESTAMP WITH TIME ZONE NOT NULL,
+    vehicle_id TEXT NOT NULL,
+    latitude NUMERIC(8, 6) NOT NULL,
+    longitude NUMERIC(9, 6) NOT NULL,
+    bearing NUMERIC(5, 2),
+    progress INTEGER,
+    service_date DATE NOT NULL,
+    trip_id TEXT NOT NULL,
+    block TEXT,
+    stop_id TEXT,
+    dist_along_route NUMERIC(8, 2),
+    dist_from_stop NUMERIC(8, 2),
+    CONSTRAINT position_time_bus PRIMARY KEY (timestamp_utc, vehicle_id)
+);
+CREATE INDEX pos_vid ON positions (vehicle_id);
+CREATE INDEX pos_sdate ON positions (service_date);
+CREATE INDEX pos_trip_id ON positions (trip_id);
+CREATE INDEX pos_time ON positions (timestamp_utc);
 
 CREATE TABLE gtfs_trips (
   feed_index int not null,
@@ -17,7 +38,6 @@ CREATE TABLE gtfs_trips (
   wheelchair_accessible int,
   CONSTRAINT gtfs_trips_pkey PRIMARY KEY (feed_index, trip_id)
 );
-
 CREATE INDEX gtfs_trips_trip_id ON gtfs_trips (trip_id);
 CREATE INDEX gtfs_trips_service_id ON gtfs_trips (feed_index, service_id);
 
@@ -33,19 +53,10 @@ CREATE TABLE gtfs_stop_times (
   pickup_type int,
   drop_off_type int,
   shape_dist_traveled double precision,
-  timepoint int REFERENCES gtfs_timepoints (timepoint),
-
-  -- unofficial features
-  -- the following are not in the spec
-  continuous_drop_off int default null,
-  continuous_pickup  int default null,
-  arrival_time_seconds int default null,
-  departure_time_seconds int default null,
+  timepoint int,
   CONSTRAINT gtfs_stop_times_pkey PRIMARY KEY (feed_index, trip_id, stop_sequence)
 );
 CREATE INDEX gtfs_stop_times_key ON gtfs_stop_times (trip_id, stop_id);
-CREATE INDEX arr_time_index ON gtfs_stop_times (arrival_time_seconds);
-CREATE INDEX dep_time_index ON gtfs_stop_times (departure_time_seconds);
 
 CREATE TABLE gtfs_stop_distances_along_shape (
   feed_index integer not null,

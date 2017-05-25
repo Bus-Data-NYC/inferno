@@ -15,7 +15,7 @@ before_install:
 install:
   - make init DATABASE=nycbus
   - pip install coverage
-  - psql nycbus -q -f src/test_data/schema.sql 
+  - psql nycbus -q -f src/test_data/schema.sql -f src/test_data/shape_geoms.sql
   - psql nycbus -q -f src/test_data/positions.sql -f src/test_data/stop_times.sql
   - psql nycbus -q -f src/test_data/trips.sql -f src/test_data/stop_distances.sql
 
@@ -25,4 +25,4 @@ script:
 
 after_script:
     - psql -U postgres -c "SELECT * FROM calls LIMIT 10"
-    - coverage report
+    - coverage report --show-missing --include=src/*
