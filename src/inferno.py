@@ -218,11 +218,11 @@ def generate_calls(run: list, stoptimes: list):
     except (AttributeError, IndexError):
         ei = len(stoptimes)
 
+    if len(stop_positions[si:ei]) == 0:
+        return []
+
     interpolated = np.interp(stop_positions[si:ei], obs_distances, obs_times)
     calls = [call(stop, secs) for stop, secs in zip(stoptimes[si:ei], interpolated)]
-
-    if len(calls) == 0:
-        return []
 
     if len(run) > 3:
         # Extrapolate forward to the next stop after the positions
