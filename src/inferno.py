@@ -100,7 +100,6 @@ INSERT = """INSERT INTO {}
     VALUES ({}, '{}', %(route_id)s, %(direction_id)s, %(stop_id)s, %(call_time)s, %(source)s)"""
 
 EPOCH = datetime.utcfromtimestamp(0)
-EST = pytz.timezone('US/Eastern')
 
 
 def to_unix(dt):
@@ -186,11 +185,16 @@ def get_stoptimes(cursor, tripid):
 
 
 def call(stoptime, seconds, method=None):
+    '''
+    Returns a dict with route, direction, stop, call time and source.
+    Call time is in UTC.
+    '''
+    calltime = datetime.utcfromtimestamp(seconds).replace(tzinfo=pytz.UTC)
     return {
         'route_id': stoptime['route_id'],
         'direction_id': stoptime['direction_id'],
         'stop_id': stoptime['stop_id'],
-        'call_time': datetime.utcfromtimestamp(seconds).replace(tzinfo=pytz.UTC).astimezone(EST),
+        'call_time': calltime,
         'source': method or 'I'
     }
 
