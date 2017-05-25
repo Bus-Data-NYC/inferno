@@ -37,7 +37,6 @@ MAX_TIME_BETWEEN_STOPS = timedelta(seconds=60 * 30)
 # beginning at 100 ft. Nevertheless, we're doing 100 ft
 STOP_THRESHOLD = 30.48
 
-# Purposefully ignoring daylight savings for now
 VEHICLE_QUERY = """SELECT
     timestamp_utc AS timestamp,
     vehicle_id,
@@ -56,15 +55,11 @@ FROM positions p
 WHERE
     vehicle_id = %(vehicle)s
     AND (
-        service_date = DATE %(date)s
-        OR (
-            DATE(timestamp_utc::TIMESTAMP WITH TIME ZONE AT TIME ZONE 'EST') = DATE %(date)s - INTERVAL '1 DAY'
-            AND EXTRACT(HOUR FROM timestamp_utc::TIMESTAMP WITH TIME ZONE AT TIME ZONE 'EST') > 23
-        )
-        OR (
-            DATE(timestamp_utc::TIMESTAMP WITH TIME ZONE AT TIME ZONE 'EST') = DATE %(date)s + INTERVAL '1 DAY'
-            AND EXTRACT(HOUR FROM timestamp_utc::TIMESTAMP WITH TIME ZONE AT TIME ZONE 'EST') < 4
-        )
+        service_date = date %(date)s
+        -- give leeway for broken service_date at the very end or start of day
+        OR timestamp_utc
+            BETWEEN date %(date)s - interval '1 HOURS'
+            AND date %(date)s + interval '29 HOURS'
     )
 ORDER BY
     trip_id,
