@@ -76,7 +76,7 @@ SELECT_TRIP_INDEX = """SELECT
     gtfs_trips.direction_id,
     stop_id,
     stop_sequence AS seq,
-    dist_along_shape
+    dist_along_shape distance
 FROM gtfs_trips
     LEFT JOIN gtfs_stop_times USING (feed_index, trip_id)
     LEFT JOIN gtfs_stops USING (feed_index, stop_id)
@@ -207,7 +207,7 @@ def generate_calls(run: list, stoptimes: list) -> list:
     '''
     obs_distances = [p['distance'] for p in run]
     obs_times = [p['timestamp'] for p in run]
-    stop_positions = [x['dist_along_shape'] for x in stoptimes]
+    stop_positions = [x['distance'] for x in stoptimes]
     stop_seq = [x['seq'] for x in stoptimes]
 
     # set start index to the stop that first position (P.0) is approaching
@@ -323,7 +323,7 @@ def main():
     with Pool(os.cpu_count()) as pool:
         pool.starmap(track_vehicle, itervehicles)
 
-    logging.info("SUCCESS: Committed %s", date)
+    logging.info("SUCCESS: Committed %s", args.date)
 
 
 if __name__ == '__main__':
