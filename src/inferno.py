@@ -1,5 +1,6 @@
 #!/user/bin/env python3.5
 from __future__ import division
+import argparse
 import sys
 import os
 from typing import Callable
@@ -290,21 +291,30 @@ def track_vehicle(vehicle_id, table, date, connectionstring):
             logging.info('COMMIT %s (%s calls)', vehicle_id, lenc)
 
 
-def main(connectionstring: str, table, date, vehicle=None):
+def main():
+    # connectionstring: str, table, date, vehicle=None
+    parser = argparse.ArgumentParser()
+    parser.add_argument('connectionstring', type=str)
+    parser.add_argument('date', type=str)
+    parser.add_argument('--table', type=str, default='calls')
+    parser.add_argument('--vehicle', type=str)
+
+    args = parser.parse_args()
+
     psycopg2.extensions.register_type(DEC2FLOAT)
 
-    if vehicle:
-        vehicles = [vehicle]
+    if args.vehicle:
+        vehicles = [args.vehicle]
     else:
-        with psycopg2.connect(connectionstring) as conn:
+        with psycopg2.connect(args.connectionstring) as conn:
             with conn.cursor() as cursor:
-                cursor.execute(SELECT_VEHICLE, (date,))
+                cursor.execute(SELECT_VEHICLE, (args.date,))
                 vehicles = [x[0] for x in cursor.fetchall()]
 
     itervehicles = zip(vehicles,
-                       cycle([table]),
-                       cycle([date]),
-                       cycle([connectionstring])
+                       cycle([args.table]),
+                       cycle([args.date]),
+                       cycle([args.connectionstring])
                        )
 
     for i in itervehicles:
@@ -317,4 +327,4 @@ def main(connectionstring: str, table, date, vehicle=None):
 
 
 if __name__ == '__main__':
-    main(*sys.argv[1:])
+    main()
