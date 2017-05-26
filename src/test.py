@@ -17,8 +17,8 @@ def monotonically_increasing(L):
 class TestInferno(unittest.TestCase):
 
     dirname = path.dirname(__file__)
-    connstr = 'dbname=nycbus'
-    vehicle_id = 8500
+    connstr = 'dbname=inferno'
+    vehicle_id = '8500'
     service_date = '2017-05-20'
 
     @classmethod
@@ -50,7 +50,10 @@ class TestInferno(unittest.TestCase):
 
         with self._connection.cursor() as curs:
             curs.execute(inferno.VEHICLE_QUERY, args)
-            self.assertEqual(902, len(curs.fetchall()))
+            result = curs.fetchall()
+
+        self.assertEqual(902, len(result))
+        self.assertTrue(all(result[0]))
 
     def test_common(self):
         a = ['a', 'a', 'b']

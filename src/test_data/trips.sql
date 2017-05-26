@@ -1,3 +1,6 @@
+INSERT INTO "gtfs_feed_info" ("feed_index","feed_start_date","feed_end_date")
+VALUES (7, '2017-04-08', '2017-07-01');
+
 INSERT INTO "gtfs_trips"
     ("feed_index","route_id","service_id","trip_id","trip_headsign","direction_id","block_id","shape_id")
 VALUES

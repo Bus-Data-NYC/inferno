@@ -10,19 +10,23 @@ git:
   depth: 3
 
 before_install:
-  - createdb nycbus
+  - pip install coverage
 
 install:
-  - make init DATABASE=nycbus
-  - pip install coverage
-  - psql nycbus -q -f src/test_data/schema.sql -f src/test_data/shape_geoms.sql
-  - psql nycbus -q -f src/test_data/positions.sql -f src/test_data/stop_times.sql
-  - psql nycbus -q -f src/test_data/trips.sql -f src/test_data/stop_distances.sql
+  - curl -LO https://github.com/fitnr/gtfs_SQL_importer/archive/alpha.zip
+  - unzip alpha.zip
+  - make init drop_constraints -C gtfs_SQL_importer-alpha DATABASE=inferno
+  - make init DATABASE=inferno
+  - psql inferno -f src/test_data/positions.sql
+  - psql inferno -f src/test_data/trips.sql
+  - psql inferno -f src/test_data/shape_geoms.sql
+  - psql inferno -f src/test_data/stop_times.sql
+  - psql inferno -f src/test_data/stop_distances.sql
 
 script:
-    - make test PYTHON=python
-    - make calls-day-2017-01-01 PYTHON=python DATABASE=nycbus
+    - make test PYTHON=python DATABASE=inferno
+    - make calls-day-2017-05-20 PYTHON=python DATABASE=inferno
 
 after_script:
-    - psql -U postgres -c "SELECT * FROM calls LIMIT 10"
+    - psql inferno -c "SELECT * FROM calls LIMIT 10"
     - coverage report --show-missing --include=src/*
