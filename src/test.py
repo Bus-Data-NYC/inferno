@@ -86,6 +86,8 @@ class TestInferno(unittest.TestCase):
             # increasing distance
             self.assertTrue(increasing([r['distance'] for r in run]))
 
+    def test_track_vehicle(self):
+        inferno.track_vehicle(self.vehicle_id, 'calls', self.service_date, self.connstr)
 
 if __name__ == '__main__':
     unittest.main()

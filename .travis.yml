@@ -25,6 +25,7 @@ install:
 
 script:
     - make test PYTHON=python DATABASE=inferno
+    - psql inferno -c 'TRUNCATE TABLE calls'
     - make calls-day-2017-05-20 PYTHON=python DATABASE=inferno
 
 after_script:
