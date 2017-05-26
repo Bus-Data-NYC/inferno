@@ -213,13 +213,13 @@ def generate_calls(run: list, stoptimes: list) -> list:
     # set start index to the stop that first position (P.0) is approaching
     try:
         si = stop_seq.index(min(x['seq'] for x in run))
-    except (IndexError, TypeError):
+    except (TypeError, ValueError):
         si = 0
 
     # set end index to the stop approached by the last position (P.n) (which means it won't be used in interp)
     try:
         ei = stop_seq.index(max(x['seq'] for x in run))
-    except (IndexError, TypeError):
+    except (TypeError, ValueError):
         ei = len(stoptimes) - 1
 
     if len(stop_positions[si:ei]) == 0:

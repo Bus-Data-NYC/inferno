@@ -33,17 +33,18 @@ class TestInferno(unittest.TestCase):
     def test_calls(self):
         with self._connection.cursor() as cursor:
             runs = inferno.filter_positions(cursor, self.service_date, self.vehicle_id)
-            run = runs[0]
-            trip = inferno.common([x['trip_id'] for x in run])
-            stoptimes = inferno.get_stoptimes(cursor, trip)
 
-        calls = inferno.generate_calls(run, stoptimes)
+            for run in runs:
+                trip = inferno.common([x['trip_id'] for x in run])
+                stoptimes = inferno.get_stoptimes(cursor, trip)
 
-        # No duplicates
-        assert len(calls) == len(set(c['call_time'] for c in calls))
+                calls = inferno.generate_calls(run, stoptimes)
 
-        # Monotonically increasing
-        self.assertTrue(monotonically_increasing([x['call_time'] for x in calls]))
+                # No duplicates
+                assert len(calls) == len(set(c['call_time'] for c in calls))
+
+                # Monotonically increasing
+                self.assertTrue(monotonically_increasing([x['call_time'] for x in calls]))
 
     def test_vehicle_query(self):
         args = {'vehicle': self.vehicle_id, 'date': self.service_date}
