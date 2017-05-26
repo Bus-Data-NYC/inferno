@@ -172,11 +172,14 @@ def filter_positions(cursor, date, vehicle=None):
 
     return runs
 
-
 def get_stoptimes(cursor, tripid):
     cursor.execute(SELECT_TRIP_INDEX, (tripid,))
     fieldnames = desc2fn(cursor.description)
     return [dict(zip(fieldnames, row)) for row in cursor.fetchall()]
+
+def extrapolate(x, y, vals):
+    coefficients = np.polyfit(x, y, 1)
+    return np.poly1d(coefficients)(vals)
 
 
 def call(stoptime, seconds, method=None):
@@ -204,49 +207,50 @@ def generate_calls(run: list, stoptimes: list) -> list:
     obs_distances = [p['distance'] for p in run]
     obs_times = [p['timestamp'] for p in run]
     stop_positions = [x['dist_along_shape'] for x in stoptimes]
+    stop_seq = [x['seq'] for x in stoptimes]
 
     # set start index to the stop that first position (P.0) is approaching
     try:
-        si = stoptimes.index([x for x in stoptimes if x['seq'] == run[0]['seq']][0])
-    except (IndexError, AttributeError):
+        si = stop_seq.index(min(x['seq'] for x in run))
+    except (IndexError, TypeError):
         si = 0
 
     # set end index to the stop approached by the last position (P.n) (which means it won't be used in interp)
     try:
-        ei = stoptimes.index([x for x in stoptimes if x['seq'] == run[-1]['seq']][0])
-    except (AttributeError, IndexError):
-        ei = len(stoptimes)
+        ei = stop_seq.index(max(x['seq'] for x in run))
+    except (IndexError, TypeError):
+        ei = len(stoptimes) - 1
 
     if len(stop_positions[si:ei]) == 0:
         return []
 
+    calls = []
+
+    # Extrapolate back for stops that occurred before observed positions.
+    if si > 0:
+        try:
+            extrapolated = extrapolate(obs_distances[:4], obs_times[:4], stop_positions[:si])
+            calls = [call(st, ex, 'S') for ex, st in zip(extrapolated, stoptimes[:si])]
+        except ValueError:
+            pass
+        except TypeError:
+            logging.error('Error extrapolating early stops. index: %s', si)
+            logging.error('positions %s, sequence: %s', stop_positions[:si], stop_seq[:si])
+
+    # Interpolate main chunk of positions.
     interpolated = np.interp(stop_positions[si:ei], obs_distances, obs_times)
-    calls = [call(stop, secs) for stop, secs in zip(stoptimes[si:ei], interpolated)]
+    calls.extend([call(stop, secs) for stop, secs in zip(stoptimes[si:ei], interpolated)])
 
-    if len(run) > 3:
-        # Extrapolate forward to the next stop after the positions
-        if ei < len(stoptimes):
-            try:
-                coefficients = np.polyfit(obs_distances[-3:], obs_times[-3:], 1)
-                extrapolated = np.poly1d(coefficients)(stop_positions[ei])
-                calls.append(call(stoptimes[ei], extrapolated, 'E'))
-            except ValueError:
-                pass
-            except TypeError:
-                logging.error('Error extrapolating early stops. index: %s', ei)
-                logging.error('Stop position %s', stop_positions[ei])
-
-        # Extrapolate back for a single stop before the positions
-        if si > 0:
-            coefficients = np.polyfit(obs_distances[:3], obs_times[:3], 1)
-            try:
-                extrapolated = np.poly1d(coefficients)(stop_positions[si])
-                calls.insert(0, call(stoptimes[si], extrapolated, 'S'))
-            except ValueError:
-                pass
-            except TypeError:
-                logging.error('Error extrapolating early stops. index: %s', si)
-                logging.error('Stop position %s', stop_positions[si])
+    # Extrapolate forward to the stops after the observed positions.
+    if ei < len(stoptimes):
+        try:
+            extrapolated = extrapolate(obs_distances[-4:], obs_times[-4:], stop_positions[ei:])
+            calls.extend([call(st, ex, 'E') for ex, st in zip(extrapolated, stoptimes[ei:])])
+        except ValueError:
+            pass
+        except TypeError:
+            logging.error('Error extrapolating late stops. index: %s', ei)
+            logging.error('positions %s, sequence: %s', stop_positions[ei:], stop_seq[ei:])
 
     return calls
 
