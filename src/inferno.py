@@ -69,12 +69,33 @@ ORDER BY
 SELECT_VEHICLE = """SELECT DISTINCT vehicle_id
     FROM positions WHERE service_date = %s"""
 
-SELECT_TRIP_INDEX = """SELECT
+SELECT_STOPTIMES = """SELECT
+    stop_id AS id,
+    arrival_time AS time,
+    route_id,
+    direction_id,
+    stop_sequence AS seq,
+    dist_along_shape distance
+FROM gtfs_trips
+    LEFT JOIN gtfs_stop_times USING (feed_index, trip_id)
+    LEFT JOIN gtfs_stops USING (feed_index, stop_id)
+    LEFT JOIN gtfs_stop_distances_along_shape USING (feed_index, shape_id, stop_id)
+WHERE trip_id = %(date)s
+    AND feed_index = (
+        SELECT MAX(feed_index)
+        FROM gtfs_trips
+            LEFT JOIN gtfs_calendar USING (feed_index, service_id)
+        WHERE trip_id = %(trip)s
+            AND DATE %(date)s BETWEEN start_date and end_date
+    )
+ORDER BY stop_sequence ASC
+"""
+
+SELECT_STOPTIMES_PLAIN = """SELECT DISTINCT
     stop_id id,
     arrival_time AS time,
     route_id,
-    gtfs_trips.direction_id,
-    stop_id,
+    direction_id,
     stop_sequence AS seq,
     dist_along_shape distance
 FROM gtfs_trips
@@ -109,12 +130,14 @@ def desc2fn(description: tuple) -> tuple:
     '''Extract tuple of field names from psycopg2 cursor.description.'''
     return tuple(d.name for d in description)
 
+
 def compare_seq(x, y):
     try:
         return x['seq'] >= y['seq']
     except TypeError:
         # Be lenient when there's bad data: return True when None.
         return x['seq'] is None or y['seq'] is None
+
 
 def filter_positions(cursor, date, vehicle=None):
     '''
@@ -173,10 +196,19 @@ def filter_positions(cursor, date, vehicle=None):
 
     return runs
 
-def get_stoptimes(cursor, tripid):
-    cursor.execute(SELECT_TRIP_INDEX, (tripid,))
+
+def get_stoptimes(cursor, tripid, date):
+    cursor.execute(SELECT_STOPTIMES, {'trip': tripid, 'date': date})
     fieldnames = desc2fn(cursor.description)
+
+    # The feed indices where corrput. Run this again without checking the date range.
+    if cursor.rowcount == 0:
+        logging.warning("Couldn't find any stoptimes in date range, running simple query: %s", tripid)
+        cursor.execute(SELECT_STOPTIMES_PLAIN, (tripid,))
+        fieldnames = desc2fn(cursor.description)
+
     return [dict(zip(fieldnames, row)) for row in cursor.fetchall()]
+
 
 def extrapolate(x, y, vals):
     coefficients = np.polyfit(x, y, 1)
@@ -192,7 +224,7 @@ def call(stoptime, seconds, method=None):
     return {
         'route_id': stoptime['route_id'],
         'direction_id': stoptime['direction_id'],
-        'stop_id': stoptime['stop_id'],
+        'stop_id': stoptime['id'],
         'call_time': calltime,
         'source': method or 'I'
     }
@@ -270,7 +302,7 @@ def track_vehicle(vehicle_id, table, date, connectionstring):
                     continue
                 elif len(run) <= 2:
                     logging.debug('short run (%d positions), v_id=%s, %s',
-                                 len(run), vehicle_id, run[0]['timestamp'])
+                                  len(run), vehicle_id, run[0]['timestamp'])
                     continue
 
                 # Assume most common trip is the correct one.
@@ -278,6 +310,10 @@ def track_vehicle(vehicle_id, table, date, connectionstring):
 
                 # Get the scheduled list of stops for this trip.
                 stoptimes = get_stoptimes(cursor, trip_id)
+
+                if any(x['distance'] is None for x in stoptimes):
+                    logging.warning('Missing stoptimes for %s', trip_id)
+                    continue
 
                 # Generate (infer) calls.
                 calls = generate_calls(run, stoptimes)
