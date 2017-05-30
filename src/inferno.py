@@ -71,44 +71,46 @@ SELECT_VEHICLE = """SELECT DISTINCT vehicle_id
 
 SELECT_STOPTIMES = """SELECT
     stop_id AS id,
-    arrival_time AS time,
+    wall_time(date %(date)s, arrival_time, agency_timezone) AS datetime,
     route_id,
     direction_id,
     stop_sequence AS seq,
     dist_along_shape distance
 FROM gtfs_trips
+    LEFT JOIN gtfs_agency USING (feed_index)
     LEFT JOIN gtfs_stop_times USING (feed_index, trip_id)
     LEFT JOIN gtfs_stops USING (feed_index, stop_id)
     LEFT JOIN gtfs_stop_distances_along_shape USING (feed_index, shape_id, stop_id)
-WHERE trip_id = %(date)s
+WHERE trip_id = %(trip)s
     AND feed_index = (
         SELECT MAX(feed_index)
         FROM gtfs_trips
             LEFT JOIN gtfs_calendar USING (feed_index, service_id)
         WHERE trip_id = %(trip)s
-            AND DATE %(date)s BETWEEN start_date and end_date
+            AND date %(date)s BETWEEN start_date and end_date
     )
 ORDER BY stop_sequence ASC
 """
 
 SELECT_STOPTIMES_PLAIN = """SELECT DISTINCT
     stop_id id,
-    arrival_time AS time,
+    wall_time(date %(date)s, arrival_time, agency_timezone) AS datetime,
     route_id,
     direction_id,
     stop_sequence AS seq,
     dist_along_shape distance
 FROM gtfs_trips
+    LEFT JOIN gtfs_agency USING (feed_index)
     LEFT JOIN gtfs_stop_times USING (feed_index, trip_id)
     LEFT JOIN gtfs_stops USING (feed_index, stop_id)
     LEFT JOIN gtfs_stop_distances_along_shape USING (feed_index, shape_id, stop_id)
-WHERE trip_id = %s
+WHERE trip_id = %(trip)s
 ORDER BY stop_sequence ASC;
 """
 
 INSERT = """INSERT INTO {}
-    (vehicle_id, trip_id, route_id, direction_id, stop_id, call_time, source)
-    VALUES ({}, '{}', %(route_id)s, %(direction_id)s, %(stop_id)s, %(call_time)s, %(source)s)"""
+    (vehicle_id, trip_id, route_id, direction_id, stop_id, call_time, source, deviation)
+    VALUES (%(vehicle)s, %(trip)s, %(route_id)s, %(direction_id)s, %(stop_id)s, %(call_time)s, %(source)s, %(deviation)s)"""
 
 
 def common(lis: list):
@@ -192,19 +194,21 @@ def filter_positions(cursor, date, vehicle=None):
     # mask runs to eliminate out-of-order stop sequences
     runs = [mask2(run, compare_seq) for run in runs
             if run[0]['service_date'].isoformat() == date
+            and len(run) > 2
             ]
 
     return runs
 
 
 def get_stoptimes(cursor, tripid, date):
-    cursor.execute(SELECT_STOPTIMES, {'trip': tripid, 'date': date})
+    fields = {'trip': tripid, 'date': date}
+    cursor.execute(SELECT_STOPTIMES, fields)
     fieldnames = desc2fn(cursor.description)
 
     # The feed indices where corrput. Run this again without checking the date range.
     if cursor.rowcount == 0:
         logging.warning("Couldn't find any stoptimes in date range, running simple query: %s", tripid)
-        cursor.execute(SELECT_STOPTIMES_PLAIN, (tripid,))
+        cursor.execute(SELECT_STOPTIMES_PLAIN, fields)
         fieldnames = desc2fn(cursor.description)
 
     return [dict(zip(fieldnames, row)) for row in cursor.fetchall()]
@@ -226,6 +230,7 @@ def call(stoptime, seconds, method=None):
         'direction_id': stoptime['direction_id'],
         'stop_id': stoptime['id'],
         'call_time': calltime,
+        'deviation': calltime - stoptime['datetime'],
         'source': method or 'I'
     }
 
@@ -309,7 +314,7 @@ def track_vehicle(vehicle_id, table, date, connectionstring):
                 trip_id = common([x['trip_id'] for x in run])
 
                 # Get the scheduled list of stops for this trip.
-                stoptimes = get_stoptimes(cursor, trip_id)
+                stoptimes = get_stoptimes(cursor, trip_id, date)
 
                 if any(x['distance'] is None for x in stoptimes):
                     logging.warning('Missing stoptimes for %s', trip_id)
@@ -319,8 +324,10 @@ def track_vehicle(vehicle_id, table, date, connectionstring):
                 calls = generate_calls(run, stoptimes)
 
                 # write calls to sink
-                insert = INSERT.format(table, vehicle_id, trip_id)
-                cursor.executemany(insert, calls)
+                cursor.executemany(
+                    INSERT.format(table),
+                    [dict(trip=trip_id, vehicle=vehicle_id, **c) for c in calls]
+                )
                 lenc += len(calls)
                 conn.commit()
 

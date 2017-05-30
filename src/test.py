@@ -36,7 +36,7 @@ class TestInferno(unittest.TestCase):
 
             for run in runs:
                 trip = inferno.common([x['trip_id'] for x in run])
-                stoptimes = inferno.get_stoptimes(cursor, trip)
+                stoptimes = inferno.get_stoptimes(cursor, trip, self.service_date)
 
                 calls = inferno.generate_calls(run, stoptimes)
 
