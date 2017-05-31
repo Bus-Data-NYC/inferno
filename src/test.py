@@ -147,9 +147,9 @@ class TestInferno(unittest.TestCase):
             )
             result = cursor.fetchone()
 
-        self.assertEqual(result[0].isoformat(), '2017-03-11T03:00:00-05:00')
-        self.assertEqual(result[1].isoformat(), '2017-03-12T04:00:00-04:00')
-        self.assertEqual(result[2].isoformat(), '2017-03-13T03:00:00-04:00')
+        self.assertEqual(result[0].astimezone(utc), datetime(2017, 3, 11, 3 + 5, 0, tzinfo=utc))
+        self.assertEqual(result[1].astimezone(utc), datetime(2017, 3, 12, 4 + 4, 0, tzinfo=utc))
+        self.assertEqual(result[2].astimezone(utc), datetime(2017, 3, 13, 3 + 4, 0, tzinfo=utc))
 
     def test_queries(self):
         data = {'trip': 'QV_B7-Weekday-SDon-145500_MISC_320', 'date': '2017-05-20'}
