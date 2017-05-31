@@ -1,3 +1,11 @@
+INSERT INTO "gtfs_agency" ("feed_index","agency_timezone")
+VALUES (7, 'America/New_York');
+
+INSERT INTO "gtfs_calendar" ("feed_index","service_id","monday","tuesday","wednesday","thursday","friday","saturday","sunday","start_date","end_date")
+VALUES
+(7,'QV_B7-Weekday-SDon',1,1,1,1,1,0,0,'2017-04-10','2017-06-30'),
+(7,'QV_B7-Saturday',0,0,0,0,0,1,0,'2017-04-15','2017-07-01');
+
 INSERT INTO "gtfs_feed_info" ("feed_index","feed_start_date","feed_end_date")
 VALUES (7, '2017-04-08', '2017-07-01');
 
