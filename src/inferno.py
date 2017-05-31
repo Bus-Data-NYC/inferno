@@ -38,15 +38,25 @@ MAX_TIME_BETWEEN_STOPS = timedelta(seconds=60 * 30)
 # beginning at 100 ft. Nevertheless, we're doing 100 ft
 STOP_THRESHOLD = 30.48
 
-VEHICLE_QUERY = """SELECT
+# Doing one complicated thing in this query.
+# Some bus routes are loops with tails (e.g. B74):
+#    +--+
+#    |  |---- (start and end)
+#    +——+
+# ST_LineLocatePoint can't handle this, so we use the mostly-untrustworthy
+# "positions"."dist_along_route" column to limit the shape_geom LineString to
+# just the half of the line.
+VEHICLE_QUERY = """WITH a AS (SELECT
     EXTRACT(EPOCH FROM timestamp_utc) AS timestamp,
     vehicle_id,
     trip_id,
     service_date,
     stop_id next_stop,
     stop_sequence seq,
-    ROUND(ST_LineLocatePoint(s.the_geom, ST_SetSRID(ST_MakePoint(longitude, latitude), 4326))::NUMERIC * ST_Length(s.the_geom::geography)::NUMERIC,
-        2) distance
+    dist_along_route,
+    ST_Length(s.the_geom::geography) AS length,
+    the_geom,
+    ST_SetSRID(ST_MakePoint(longitude, latitude), 4326) AS position
 FROM positions p
     LEFT JOIN gtfs_trips USING (trip_id)
     LEFT JOIN gtfs_stop_times st USING (feed_index, trip_id, stop_id)
@@ -64,6 +74,16 @@ ORDER BY
     trip_id,
     stop_sequence,
     timestamp_utc
+) SELECT
+    timestamp,
+    vehicle_id,
+    trip_id,
+    service_date,
+    next_stop,
+    seq,
+    ROUND((ST_LineLocatePoint(ST_LineSubstring(the_geom, GREATEST(0, dist_along_route / length - 0.25),
+        LEAST(1, dist_along_route / length + 0.25)), position) * length)::NUMERIC, 2) distance
+FROM a
 """
 
 SELECT_VEHICLE = """SELECT DISTINCT vehicle_id
@@ -208,6 +228,7 @@ def get_stoptimes(cursor, tripid, date):
     # The feed indices where corrput. Run this again without checking the date range.
     if cursor.rowcount == 0:
         logging.warning("Couldn't find any stoptimes in date range, running simple query: %s", tripid)
+        logging.warning(cursor.query.decode('utf8'))
         cursor.execute(SELECT_STOPTIMES_PLAIN, fields)
         fieldnames = desc2fn(cursor.description)
 
@@ -290,7 +311,15 @@ def generate_calls(run: list, stoptimes: list) -> list:
             logging.error('Error extrapolating late stops. index: %s', ei)
             logging.error('positions %s, sequence: %s', stop_positions[ei:], stop_seq[ei:])
 
+    try:
+        assert increasing([x['call_time'] for x in calls])
+    except AssertionError:
+        import pdb; pdb.set_trace()
+
     return calls
+
+def increasing(L):
+    return all(x <= y for x, y in zip(L, L[1:]))
 
 
 def track_vehicle(vehicle_id, table, date, connectionstring):
