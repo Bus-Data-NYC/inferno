@@ -1,7 +1,8 @@
 #!/user/bin/env python3.5
 from os import path
 import logging
-from datetime import datetime, timedelta
+from itertools import chain
+from datetime import datetime
 from collections import namedtuple
 import unittest
 import psycopg2
@@ -77,10 +78,28 @@ class TestInferno(unittest.TestCase):
             return a and b
         self.assertSequenceEqual([1, 2], inferno.mask2(a, key))
 
+        obj = [{'seq': 1}, {'seq': 2}, {'seq': 3}]
+        self.assertSequenceEqual(obj, inferno.mask2(obj, inferno.compare_seq))
+
+        wrong = [{'seq': 1}, {'seq': 2}, {'seq': 0}, {'seq': 3}]
+        self.assertSequenceEqual(obj, inferno.mask2(wrong, inferno.compare_seq))
+
     def test_desc2fn(self):
         nt = namedtuple('a', ['name'])
         a = [nt('foo'), nt('bar')]
         self.assertSequenceEqual(('foo', 'bar'), inferno.desc2fn(a))
+
+    def _stoptimes(self, trip, date):
+        with self._connection.cursor() as cursor:
+            stoptimes = inferno.get_stoptimes(cursor, trip, date)
+
+        self.assertTrue(monotonically_increasing([x['distance'] for x in stoptimes]), 'Monotonically increasing dist')
+        self.assertTrue(monotonically_increasing([x['datetime'] for x in stoptimes]), 'Monotonically increasing time')
+        self.assertTrue(monotonically_increasing([x['seq'] for x in stoptimes]), 'Monotonically increasing sequence')
+
+    def test_get_stoptimes(self):
+        self._stoptimes('UP_B7-Weekday-SDon-119500_B74_605', self.service_date)
+        self._stoptimes('QV_B7-Saturday-038500_MISC_120', self.service_date)
 
     def test_filter_positions(self):
         with self._connection.cursor() as cursor:
@@ -89,10 +108,11 @@ class TestInferno(unittest.TestCase):
             assert len(runs) == 0
 
             runs = inferno.filter_positions(cursor, self.service_date, self.vehicle_id)
+            runs2 = inferno.filter_positions(cursor, self.service_date, '7149')
 
         self.assertIsInstance(runs, list)
 
-        for run in runs:
+        for run in chain(runs, runs2):
             # Same vehicle in every run
             assert set([r['vehicle_id'] for r in run]) == set([self.vehicle_id])
             # Only one trip id per run

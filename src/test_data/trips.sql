@@ -1,13 +1,17 @@
 INSERT INTO "gtfs_feed_info" ("feed_index","feed_start_date","feed_end_date")
-VALUES (7, '2017-04-08', '2017-07-01');
+VALUES
+    ( 7, '2017-04-08', '2017-07-01'),
+    (23, '2017-04-08', '2017-07-01');
 
 INSERT INTO "gtfs_agency" ("feed_index","agency_timezone")
-VALUES (7, 'America/New_York');
+VALUES (7, 'America/New_York'),
+    (23, 'America/New_York');
 
 INSERT INTO "gtfs_calendar" ("feed_index","service_id","monday","tuesday","wednesday","thursday","friday","saturday","sunday","start_date","end_date")
 VALUES
 (7,'QV_B7-Weekday-SDon',1,1,1,1,1,0,0,'2017-04-10','2017-06-30'),
-(7,'QV_B7-Saturday',0,0,0,0,0,1,0,'2017-04-15','2017-07-01');
+(7,'QV_B7-Saturday',0,0,0,0,0,1,0,'2017-04-15','2017-07-01'),
+(23,E'UP_B7-Weekday-SDon',1,1,1,1,1,0,0,E'2017-04-19',E'2017-06-30');
 
 INSERT INTO "gtfs_trips"
     ("feed_index","route_id","service_id","trip_id","trip_headsign","direction_id","block_id","shape_id")
@@ -35,4 +39,5 @@ VALUES
 (7,E'Q88',E'QV_B7-Saturday',E'QV_B7-Saturday-068600_MISC_159',E'WOODHVN BL STA QNS CTR MALL via H.HRDNG',1,NULL,E'Q880189'),
 (7,E'Q88',E'QV_B7-Saturday',E'QV_B7-Saturday-072800_MISC_120',E'QUEENS VILL JAMAICA AV',0,NULL,E'Q880188'),
 (7,E'Q88',E'QV_B7-Saturday',E'QV_B7-Saturday-078000_MISC_120',E'WOODHVN BL STA QNS CTR MALL via H.HRDNG',1,NULL,E'Q880189'),
-(7,E'Q88',E'QV_B7-Saturday',E'QV_B7-Saturday-083300_MISC_120',E'QUEENS VILL JAMAICA AV',0,NULL,E'Q880188');
+(7,E'Q88',E'QV_B7-Saturday',E'QV_B7-Saturday-083300_MISC_120',E'QUEENS VILL JAMAICA AV',0,NULL,E'Q880188'),
+(23,'B74',E'UP_B7-Weekday-SDon',E'UP_B7-Weekday-SDon-119500_B74_605',E'STILLWELL AV',1,NULL,E'B740030');
