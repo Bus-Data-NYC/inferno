@@ -13,9 +13,9 @@ before_install:
   - pip install coverage
 
 install:
-  - curl -LO https://github.com/fitnr/gtfs_SQL_importer/archive/alpha.zip
-  - unzip alpha.zip
-  - make init drop_constraints -C gtfs_SQL_importer-alpha DATABASE=inferno
+  - curl -LO https://github.com/fitnr/gtfs-sql-importer/archive/master.zip
+  - unzip master.zip
+  - make init drop_constraints -C gtfs_SQL_importer-master DATABASE=inferno
   - make init DATABASE=inferno
   - psql inferno -f src/test_data/positions.sql
   - psql inferno -f src/test_data/trips.sql
