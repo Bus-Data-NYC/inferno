@@ -17,11 +17,6 @@ install:
   - unzip master.zip
   - make init drop_constraints -C gtfs_SQL_importer-master DATABASE=inferno
   - make init DATABASE=inferno
-  - psql inferno -f src/test_data/positions.sql
-  - psql inferno -f src/test_data/trips.sql
-  - psql inferno -f src/test_data/shape_geoms.sql
-  - psql inferno -f src/test_data/stop_times.sql
-  - psql inferno -f src/test_data/stop_distances.sql
 
 script:
     - make test PYTHON=python DATABASE=inferno

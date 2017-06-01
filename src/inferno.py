@@ -46,7 +46,7 @@ STOP_THRESHOLD = 30.48
 # ST_LineLocatePoint can't handle this, so we use the mostly-untrustworthy
 # "positions"."dist_along_route" column to limit the shape_geom LineString to
 # just the half of the line.
-VEHICLE_QUERY = """WITH a AS (SELECT
+VEHICLE_QUERY = """SELECT
     EXTRACT(EPOCH FROM timestamp_utc) AS timestamp,
     vehicle_id,
     trip_id,
@@ -54,9 +54,8 @@ VEHICLE_QUERY = """WITH a AS (SELECT
     stop_id next_stop,
     stop_sequence seq,
     dist_along_route,
-    ST_Length(s.the_geom::geography) AS length,
-    the_geom,
-    ST_SetSRID(ST_MakePoint(longitude, latitude), 4326) AS position
+    ROUND(length * careful_locate(the_geom, ST_SetSRID(ST_MakePoint(longitude, latitude), 4326),
+        (dist_along_route / length)::numeric, 0.25)::numeric, 2) AS distance
 FROM positions p
     LEFT JOIN gtfs_trips USING (trip_id)
     LEFT JOIN gtfs_stop_times st USING (feed_index, trip_id, stop_id)
@@ -74,16 +73,6 @@ ORDER BY
     trip_id,
     stop_sequence,
     timestamp_utc
-) SELECT
-    timestamp,
-    vehicle_id,
-    trip_id,
-    service_date,
-    next_stop,
-    seq,
-    ROUND((ST_LineLocatePoint(ST_LineSubstring(the_geom, GREATEST(0, dist_along_route / length - 0.25),
-        LEAST(1, dist_along_route / length + 0.25)), position) * length)::NUMERIC, 2) distance
-FROM a
 """
 
 SELECT_VEHICLE = """SELECT DISTINCT vehicle_id
@@ -95,12 +84,11 @@ SELECT_STOPTIMES = """SELECT
     route_id,
     direction_id,
     stop_sequence AS seq,
-    dist_along_shape distance
+    shape_dist_traveled distance
 FROM gtfs_trips
     LEFT JOIN gtfs_agency USING (feed_index)
     LEFT JOIN gtfs_stop_times USING (feed_index, trip_id)
     LEFT JOIN gtfs_stops USING (feed_index, stop_id)
-    LEFT JOIN gtfs_stop_distances_along_shape USING (feed_index, shape_id, stop_id)
 WHERE trip_id = %(trip)s
     AND feed_index = (
         SELECT MAX(feed_index)
@@ -118,12 +106,11 @@ SELECT_STOPTIMES_PLAIN = """SELECT DISTINCT
     route_id,
     direction_id,
     stop_sequence AS seq,
-    dist_along_shape distance
+    shape_dist_traveled distance
 FROM gtfs_trips
     LEFT JOIN gtfs_agency USING (feed_index)
     LEFT JOIN gtfs_stop_times USING (feed_index, trip_id)
     LEFT JOIN gtfs_stops USING (feed_index, stop_id)
-    LEFT JOIN gtfs_stop_distances_along_shape USING (feed_index, shape_id, stop_id)
 WHERE trip_id = %(trip)s
 ORDER BY stop_sequence ASC;
 """
@@ -311,10 +298,7 @@ def generate_calls(run: list, stoptimes: list) -> list:
             logging.error('Error extrapolating late stops. index: %s', ei)
             logging.error('positions %s, sequence: %s', stop_positions[ei:], stop_seq[ei:])
 
-    try:
-        assert increasing([x['call_time'] for x in calls])
-    except AssertionError:
-        import pdb; pdb.set_trace()
+    assert increasing([x['call_time'] for x in calls])
 
     return calls
 
