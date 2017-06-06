@@ -55,7 +55,7 @@ VEHICLE_QUERY = """SELECT
     stop_sequence seq,
     dist_along_route,
     ROUND(length * careful_locate(the_geom, ST_SetSRID(ST_MakePoint(longitude, latitude), 4326),
-        (dist_along_route / length)::numeric, 0.25)::numeric, 2) AS distance
+        (dist_along_route / length)::numeric, 0.05)::numeric, 2) AS distance
 FROM positions p
     LEFT JOIN gtfs_trips USING (trip_id)
     LEFT JOIN gtfs_stop_times st USING (feed_index, trip_id, stop_id)
@@ -71,7 +71,6 @@ WHERE
     )
 ORDER BY
     trip_id,
-    stop_sequence,
     timestamp_utc
 """
 
