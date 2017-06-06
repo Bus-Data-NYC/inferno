@@ -66,7 +66,8 @@ SELECT
         (dist_along_route / length)::numeric, 0.05)::numeric, 2) AS distance
 FROM positions p
     LEFT JOIN gtfs_trips USING (trip_id)
-    LEFT JOIN gtfs_stop_times st USING (feed_index, trip_id, stop_id)
+    -- TODO: change to LEFT JOIN when fix implemented for orphan stops
+    INNER JOIN gtfs_stop_times st USING (feed_index, trip_id, stop_id)
     LEFT JOIN gtfs_shape_geoms s USING (feed_index, shape_id)
     LEFT JOIN service USING (feed_index)
 WHERE
