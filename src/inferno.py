@@ -46,28 +46,34 @@ STOP_THRESHOLD = 30.48
 # ST_LineLocatePoint can't handle this, so we use the mostly-untrustworthy
 # "positions"."dist_along_route" column to limit the shape_geom LineString to
 # just the half of the line.
-VEHICLE_QUERY = """SELECT
+VEHICLE_QUERY = """WITH service AS (
+    -- give leeway for broken service_date at the very end or start of day
+    -- get service date in agency timezone for valid comparison to timestamp_utc
+    SELECT
+        feed_index,
+        %(date)s::timestamp at time zone agency_timezone - interval '1 HOURS' AS left,
+        %(date)s::timestamp at time zone agency_timezone + interval '29 HOURS' AS right
+    FROM gtfs_agency
+)
+SELECT
     EXTRACT(EPOCH FROM timestamp_utc) AS timestamp,
     vehicle_id,
     trip_id,
     service_date,
     stop_id next_stop,
     stop_sequence seq,
-    dist_along_route,
     ROUND(length * careful_locate(the_geom, ST_SetSRID(ST_MakePoint(longitude, latitude), 4326),
         (dist_along_route / length)::numeric, 0.05)::numeric, 2) AS distance
 FROM positions p
     LEFT JOIN gtfs_trips USING (trip_id)
     LEFT JOIN gtfs_stop_times st USING (feed_index, trip_id, stop_id)
     LEFT JOIN gtfs_shape_geoms s USING (feed_index, shape_id)
+    LEFT JOIN service USING (feed_index)
 WHERE
     vehicle_id = %(vehicle)s
     AND (
         service_date = date %(date)s
-        -- give leeway for broken service_date at the very end or start of day
-        OR timestamp_utc
-            BETWEEN date %(date)s - interval '1 HOURS'
-            AND date %(date)s + interval '29 HOURS'
+        OR timestamp_utc BETWEEN service.left AND service.right
     )
 ORDER BY
     trip_id,
