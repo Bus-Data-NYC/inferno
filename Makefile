@@ -22,8 +22,8 @@ $(foreach y,$(years),$(addprefix calls-$(y)-,$(months))): calls-%:
 calls-day-%:
 	$(PYTHON) src/inferno.py "dbname=$(DATABASE) $(PSQLFLAGS)" $* --table $(TABLE)
 
-test: | clear-test load-test
-	$(PYTHON) -m coverage run src/test.py
+test: | clean-test load-test
+	$(PYTHON) -m coverage run src/test.py -q
 
 load-test:
 	psql inferno -f src/test_data/positions.sql
@@ -31,8 +31,8 @@ load-test:
 	psql inferno -f src/test_data/shape_geoms.sql
 	psql inferno -f src/test_data/stop_times.sql
 
-clear-test:
-	psql inferno -c "truncate positions, gtfs_trips, gtfs_stop_times, \
+clean-test:
+	psql inferno -c "truncate calls, positions, gtfs_trips, gtfs_stop_times, \
 		gtfs_calendar, gtfs_feed_info, gtfs_agency, gtfs_shape_geoms cascade;"
 
 init:

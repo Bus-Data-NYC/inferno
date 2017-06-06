@@ -63,7 +63,7 @@ class TestInferno(unittest.TestCase):
             curs.execute(inferno.VEHICLE_QUERY, args)
             result = curs.fetchall()
 
-        self.assertEqual(902, len(result))
+        self.assertEqual(899, len(result))
         self.assertTrue(all(result[0]))
 
     def test_common(self):
@@ -105,6 +105,9 @@ class TestInferno(unittest.TestCase):
         with self._connection.cursor() as cursor:
             stoptimes = inferno.get_stoptimes(cursor, trip, date)
 
+        self.assertTrue(not any([x['seq'] is None for x in stoptimes]), 'No None sequences')
+        self.assertTrue(not any([x['datetime'] is None for x in stoptimes]), 'No None datetimes')
+        self.assertTrue(not any([x['distance'] is None for x in stoptimes]), 'No None distances')
         self.assertTrue(monotonically_increasing([x['distance'] for x in stoptimes]), 'Monotonically increasing dist')
         self.assertTrue(monotonically_increasing([x['datetime'] for x in stoptimes]), 'Monotonically increasing time')
         self.assertTrue(monotonically_increasing([x['seq'] for x in stoptimes]), 'Monotonically increasing sequence')
@@ -113,24 +116,39 @@ class TestInferno(unittest.TestCase):
         self._stoptimes('UP_B7-Weekday-SDon-119500_B74_605', self.service_date)
         self._stoptimes('QV_B7-Saturday-038500_MISC_120', self.service_date)
 
+    def _run_tst(self, runs):
+        for run in runs:
+            # Same vehicle in every run
+            try:
+                assert len(set([r['vehicle_id'] for r in run])) == 1
+            except AssertionError:
+                raise AssertionError(set([r['vehicle_id'] for r in run]))
+
+            # Only one trip id per run
+            try:
+                assert len(set([r['trip_id'] for r in run])) == 1
+            except AssertionError:
+                raise AssertionError(set([r['trip_id'] for r in run]))
+
+            # increasing distance
+            try:
+                self.assertTrue(increasing([r['distance'] for r in run]))
+            except AssertionError:
+                raise AssertionError([(r['distance'], j['distance']) for r, j in zip(run, run[1:]) if r['distance'] > j['distance']])
+
     def test_filter_positions(self):
         with self._connection.cursor() as cursor:
             # Check that imaginary vehicle returns nothing
             runs = inferno.filter_positions(cursor, self.service_date, 'magic schoolbus')
-            assert len(runs) == 0
+            self.assertEqual(len(runs), 0)
 
             runs = inferno.filter_positions(cursor, self.service_date, self.vehicle_id)
-            runs2 = inferno.filter_positions(cursor, self.service_date, '7149')
+            runs2 = inferno.filter_positions(cursor, '2017-05-20', '7149')
 
         self.assertIsInstance(runs, list)
 
-        for run in chain(runs, runs2):
-            # Same vehicle in every run
-            assert set([r['vehicle_id'] for r in run]) == set([self.vehicle_id])
-            # Only one trip id per run
-            assert len(set([r['trip_id'] for r in run])) == 1
-            # increasing distance
-            self.assertTrue(increasing([r['distance'] for r in run]))
+        self._run_tst(runs)
+        self._run_tst(runs2)
 
     def test_track_vehicle(self):
         inferno.track_vehicle(self.vehicle_id, 'calls', self.service_date, self.connstr)
