@@ -147,19 +147,21 @@ def compare_seq(x, y):
         # Be lenient when there's bad data: return True when None.
         return x['seq'] is None or y['seq'] is None
 
+def samerun(a, b):
+    '''Check if two positions belong to the same run'''
+    return all((
+        # Trip is the same.
+        a.get('trip_id', None) == b['trip_id'],
+        # Sequence is the same or higher.
+        a.get('seq', 1) <= b['seq'],
+        # Distance is the same or greater.
+        a.get('distance', 1) <= b['distance'],
+    ))
 
 def filter_positions(cursor, date, vehicle=None):
     '''
     Compile list of positions for a vehicle, using a list of positions
     and filtering based on positions that reflect change in pattern or next_stop.
-    Generates a list of preliminary information:
-        vehicle
-        trip index
-        stop sequence
-        arrival min
-        arrival max
-        departure min
-        departure max
     '''
     runs = []
     prev = {}
@@ -175,27 +177,18 @@ def filter_positions(cursor, date, vehicle=None):
 
     while position is not None:
         # If trip IDs differ
-        if (position['trip_id'] != prev.get('trip_id', None)):
-            if prev.get('trip_id', None):
-                # finish old run
-                runs[-1].append(prev)
+        if not samerun(prev, position):
             # start a new run
             runs.append([])
 
-        elif prev.get('next_stop') != position['next_stop']:
-            # append the previous stop
-            runs[-1].append(prev)
-
+        # append the position
+        runs[-1].append(position)
         prev = position
 
         try:
             position = dict(zip(fieldnames, cursor.fetchone()))
         except TypeError:
             position = None
-
-    if len(runs):
-        # append very last position
-        runs[-1].append(prev)
 
     # filter out any runs that start the next day
     # mask runs to eliminate out-of-order stop sequences
