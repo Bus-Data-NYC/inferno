@@ -11,7 +11,7 @@ import inferno
 
 # Clam up, logging!
 logger = logging.getLogger()
-logger.setLevel(logging.ERROR)
+logger.setLevel(logging.DEBUG)
 
 def increasing(L):
     return all(x <= y for x, y in zip(L, L[1:]))

@@ -22,7 +22,7 @@ logformatter = logging.Formatter(fmt='%(levelname)s: %(message)s')
 loghandler.setFormatter(logformatter)
 logger.addHandler(loghandler)
 
-warnings.simplefilter('ignore', np.RankWarning)
+warnings.simplefilter('error')
 
 DEC2FLOAT = psycopg2.extensions.new_type(
     psycopg2.extensions.DECIMAL.values,
@@ -206,6 +206,7 @@ def filter_positions(cursor, date, vehicle=None):
 
 
 def get_stoptimes(cursor, tripid, date):
+    logging.debug('Fetching stoptimes for %s', tripid)
     fields = {'trip': tripid, 'date': date}
     cursor.execute(SELECT_STOPTIMES, fields)
     fieldnames = desc2fn(cursor.description)
@@ -275,8 +276,8 @@ def generate_calls(run: list, stoptimes: list) -> list:
         try:
             extrapolated = extrapolate(obs_distances[:4], obs_times[:4], stop_positions[:si])
             calls = [call(st, ex, 'S') for ex, st in zip(extrapolated, stoptimes[:si])]
-        except ValueError:
-            pass
+        except ValueError as e:
+            logging.error(e)
         except TypeError:
             logging.error('Error extrapolating early stops. index: %s', si)
             logging.error('positions %s, sequence: %s', stop_positions[:si], stop_seq[:si])
@@ -290,8 +291,8 @@ def generate_calls(run: list, stoptimes: list) -> list:
         try:
             extrapolated = extrapolate(obs_distances[-4:], obs_times[-4:], stop_positions[ei:])
             calls.extend([call(st, ex, 'E') for ex, st in zip(extrapolated, stoptimes[ei:])])
-        except ValueError:
-            pass
+        except ValueError as e:
+            logging.error(e)
         except TypeError:
             logging.error('Error extrapolating late stops. index: %s', ei)
             logging.error('positions %s, sequence: %s', stop_positions[ei:], stop_seq[ei:])
