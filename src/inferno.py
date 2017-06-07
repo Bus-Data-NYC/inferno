@@ -159,7 +159,7 @@ def samerun(a, b):
         # Trip is the same.
         a.get('trip_id', None) == b['trip_id'],
         # Sequence is the same or higher.
-        a.get('seq', 1) <= b['seq'],
+        a.get('seq', 0) <= b['seq'],
         # Distance is the same or greater.
         a.get('distance', 1) <= b['distance'],
     ))
@@ -201,6 +201,7 @@ def filter_positions(cursor, date, vehicle=None):
     runs = [mask2(run, compare_seq) for run in runs
             if run[0]['service_date'].isoformat() == date
             and len(run) > 2
+            and len(set(r['seq'] for r in run)) > 1
             ]
 
     return runs
