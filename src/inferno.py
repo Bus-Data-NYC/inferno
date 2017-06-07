@@ -1,6 +1,5 @@
 #!/user/bin/env python3.5
 from __future__ import division
-import argparse
 import sys
 import os
 from typing import Callable
@@ -10,6 +9,7 @@ import logging
 import warnings
 from collections import Counter
 from itertools import chain, compress, cycle
+import argparse
 import numpy as np
 import pytz
 import psycopg2
@@ -60,7 +60,6 @@ SELECT
     vehicle_id,
     trip_id,
     service_date,
-    stop_id next_stop,
     stop_sequence seq,
     ROUND(length * careful_locate(the_geom, ST_SetSRID(ST_MakePoint(longitude, latitude), 4326),
         (dist_along_route / length)::numeric, 0.05)::numeric, 2) AS distance
@@ -153,6 +152,7 @@ def compare_seq(x, y):
         # Be lenient when there's bad data: return True when None.
         return x['seq'] is None or y['seq'] is None
 
+
 def samerun(a, b):
     '''Check if two positions belong to the same run'''
     return all((
@@ -163,6 +163,7 @@ def samerun(a, b):
         # Distance is the same or greater.
         a.get('distance', 1) <= b['distance'],
     ))
+
 
 def filter_positions(cursor, date, vehicle=None):
     '''

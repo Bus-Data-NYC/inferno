@@ -1,7 +1,6 @@
 #!/user/bin/env python3.5
 from os import path
 import logging
-from itertools import chain
 from datetime import datetime
 from collections import namedtuple
 import unittest
@@ -11,7 +10,7 @@ import inferno
 
 # Clam up, logging!
 logger = logging.getLogger()
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 def increasing(L):
     return all(x <= y for x, y in zip(L, L[1:]))
@@ -46,13 +45,15 @@ class TestInferno(unittest.TestCase):
 
             for run in runs:
                 trip = inferno.common([x['trip_id'] for x in run])
+                logging.info('testing %s', trip)
 
                 stoptimes = inferno.get_stoptimes(cursor, trip, self.service_date)
+                self.assertGreater(len(stoptimes), 0)
                 self.assertEqual(len(stoptimes), len(set(x['id'] for x in stoptimes)), 'No duplicate stoptimes')
 
                 calls = inferno.generate_calls(run, stoptimes)
+                self.assertGreater(len(calls), 0)
                 self.assertEqual(len(calls), len(stoptimes), 'Same number of calls as stop times')
-
                 self.assertEqual(len(calls), len(set(c['call_time'] for c in calls)), 'No duplicate calls')
                 self.assertTrue(monotonically_increasing([x['call_time'] for x in calls]), 'Monotonically increasing')
 
@@ -63,7 +64,6 @@ class TestInferno(unittest.TestCase):
             curs.execute(inferno.VEHICLE_QUERY, args)
             result = curs.fetchall()
 
-        self.assertEqual(899, len(result))
         self.assertTrue(all(result[0]))
 
     def test_common(self):
@@ -184,6 +184,10 @@ class TestInferno(unittest.TestCase):
         call.update({'vehicle': 123, 'trip': 'xyz'})
         with self._connection.cursor() as cursor:
             cursor.execute(inferno.INSERT.format('calls'), call)
+        self._connection.commit()
+
+        with self._connection.cursor() as cursor:
+            cursor.execute('truncate table calls')
         self._connection.commit()
 
     def test_wall_time(self):
