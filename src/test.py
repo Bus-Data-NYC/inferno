@@ -90,16 +90,14 @@ class TestInferno(unittest.TestCase):
         self.assertSequenceEqual(('foo', 'bar'), inferno.desc2fn(a))
 
     def test_samerun(self):
-        a = {'trip_id': 'x', 'seq': 1, 'distance': 10}
-        b = {'trip_id': 'x', 'seq': 2, 'distance': 11}
-        c = {'trip_id': 'z', 'seq': 2, 'distance': 11}
-        d = {'trip_id': 'x', 'seq': 0, 'distance': 11}
-        e = {'trip_id': 'x', 'seq': 2, 'distance': 9}
+        a = {'trip_id': 'x', 'seq': 1}
+        b = {'trip_id': 'x', 'seq': 2}
+        c = {'trip_id': 'z', 'seq': 2}
+        d = {'trip_id': 'x', 'seq': 0}
 
         self.assertTrue(inferno.samerun(a, b))
         self.assertFalse(inferno.samerun(a, c))
         self.assertFalse(inferno.samerun(a, d))
-        self.assertFalse(inferno.samerun(a, e))
 
     def _stoptimes(self, trip, date):
         with self._connection.cursor() as cursor:

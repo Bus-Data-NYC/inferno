@@ -160,8 +160,6 @@ def samerun(a, b):
         a.get('trip_id', None) == b['trip_id'],
         # Sequence is the same or higher.
         a.get('seq', 0) <= b['seq'],
-        # Distance is the same or greater.
-        a.get('distance', 1) <= b['distance'],
     ))
 
 
@@ -188,8 +186,11 @@ def filter_positions(cursor, date, vehicle=None):
             # start a new run
             runs.append([])
 
-        # append the position
-        runs[-1].append(position)
+        # Check if distance is the same or greater, otherwise discard.
+        if prev.get('distance', 0) <= position['distance']:
+            # append the position
+            runs[-1].append(position)
+
         prev = position
 
         try:
