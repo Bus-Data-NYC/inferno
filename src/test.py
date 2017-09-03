@@ -17,7 +17,7 @@ def increasing(L):
 
 
 def monotonically_increasing(L):
-    return all(x <= y for x, y in zip(L, L[1:]))
+    return all(x < y for x, y in zip(L, L[1:]))
 
 
 class TestInferno(unittest.TestCase):
@@ -45,7 +45,6 @@ class TestInferno(unittest.TestCase):
 
             for run in runs:
                 trip = inferno.common([x['trip_id'] for x in run])
-                logging.info('testing %s', trip)
 
                 stoptimes = inferno.get_stoptimes(cursor, trip, self.service_date)
                 self.assertGreater(len(stoptimes), 0)
@@ -54,8 +53,9 @@ class TestInferno(unittest.TestCase):
                 calls = inferno.generate_calls(run, stoptimes)
                 self.assertGreater(len(calls), 0)
                 self.assertEqual(len(calls), len(stoptimes), 'Same number of calls as stop times')
+
+                self.assertTrue(monotonically_increasing([x['call_time'] for x in calls]), 'Monotonically increasing call times')
                 self.assertEqual(len(calls), len(set(c['call_time'] for c in calls)), 'No duplicate calls')
-                self.assertTrue(monotonically_increasing([x['call_time'] for x in calls]), 'Monotonically increasing')
 
     def test_vehicle_query(self):
         args = {'vehicle': self.vehicle_id, 'date': self.service_date}

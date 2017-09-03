@@ -2,17 +2,18 @@
 from __future__ import division
 import sys
 import os
+from bisect import bisect
 from typing import Callable
 from datetime import datetime, timedelta
 from multiprocessing import Pool
 import logging
 import warnings
 from collections import Counter
-from itertools import chain, compress, cycle
+from itertools import cycle
 import argparse
+import psycopg2
 import numpy as np
 import pytz
-import psycopg2
 
 
 logger = logging.getLogger()
@@ -201,8 +202,8 @@ def filter_positions(cursor, date, vehicle=None):
     # filter out any runs that start the next day
     # mask runs to eliminate out-of-order stop sequences
     runs = [mask2(run, compare_seq) for run in runs
-            if run[0]['service_date'].isoformat() == date
-            and len(run) > 2
+            if len(run) > 2
+            and run[0]['service_date'].isoformat() == date
             and len(set(r['seq'] for r in run)) > 1
             ]
 
@@ -253,27 +254,19 @@ def generate_calls(run: list, stoptimes: list) -> list:
         run: list generated from enumerate(positions)
         stoptimes: list of scheduled stoptimes for this trip
     '''
+    calls = []
     obs_distances = [p['distance'] for p in run]
     obs_times = [p['timestamp'] for p in run]
     stop_positions = [x['distance'] for x in stoptimes]
     stop_seq = [x['seq'] for x in stoptimes]
 
-    # set start index to the stop that first position (P.0) is approaching
-    try:
-        si = stop_seq.index(min(x['seq'] for x in run))
-    except (TypeError, ValueError):
-        si = 0
-
-    # set end index to the stop approached by the last position (P.n) (which means it won't be used in interp)
-    try:
-        ei = stop_seq.index(max(x['seq'] for x in run))
-    except (TypeError, ValueError):
-        ei = len(stoptimes) - 1
+    # Get the range of stop positions that can be interpolated based on data.
+    # The rest will be extrapolated
+    si = bisect(stop_positions, obs_distances[0])
+    ei = bisect(stop_positions, obs_distances[-1])
 
     if len(stop_positions[si:ei]) == 0:
         return []
-
-    calls = []
 
     # Extrapolate back for stops that occurred before observed positions.
     if si > 0:
@@ -301,12 +294,16 @@ def generate_calls(run: list, stoptimes: list) -> list:
             logging.error('Error extrapolating late stops. index: %s', ei)
             logging.error('positions %s, sequence: %s', stop_positions[ei:], stop_seq[ei:])
 
-    assert increasing([x['call_time'] for x in calls])
+    try:
+        assert increasing([x['call_time'] for x in calls])
+    except:
+        print('non-increasing calls', run[0], file=sys.stderr)
 
     return calls
 
+
 def increasing(L):
-    return all(x <= y for x, y in zip(L, L[1:]))
+    return all(x < y for x, y in zip(L, L[1:]))
 
 
 def track_vehicle(vehicle_id, table, date, connectionstring):
