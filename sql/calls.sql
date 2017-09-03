@@ -5,6 +5,11 @@ CREATE OR REPLACE FUNCTION wall_time(d date, t interval, zone text)
     $$
 LANGUAGE SQL IMMUTABLE;
 
+CREATE INDEX pos_vid ON rt_vehicle_positions (vehicle_id);
+CREATE INDEX pos_sdate ON rt_vehicle_positions (service_date);
+CREATE INDEX pos_trip_id ON rt_vehicle_positions (trip_id);
+CREATE INDEX pos_time ON rt_vehicle_positions ("timestamp");
+
 -- call time is a timestampz, will be passed into the db as a UTC datetime
 CREATE TABLE IF NOT EXISTS calls (
   vehicle_id text not null,
