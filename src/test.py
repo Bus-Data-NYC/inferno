@@ -12,6 +12,7 @@ import inferno
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+
 def increasing(L):
     return all(x <= y for x, y in zip(L, L[1:]))
 
@@ -32,6 +33,7 @@ class TestInferno(unittest.TestCase):
         psycopg2.extensions.register_type(inferno.DEC2FLOAT)
         cls._connection = psycopg2.connect(cls.connstr)
         with cls._connection.cursor() as c:
+            print('TRUNCATE TABLE calls')
             c.execute('TRUNCATE TABLE calls')
 
     @classmethod
@@ -41,7 +43,7 @@ class TestInferno(unittest.TestCase):
     def test_calls(self):
         '''call generator'''
         with self._connection.cursor() as cursor:
-            runs = inferno.filter_positions(cursor, self.service_date, self.vehicle_id)
+            runs = inferno.filter_positions(cursor, self.service_date, vehicle=self.vehicle_id)
 
             for run in runs:
                 trip = inferno.common([x['trip_id'] for x in run])
@@ -54,14 +56,15 @@ class TestInferno(unittest.TestCase):
                 self.assertGreater(len(calls), 0)
                 self.assertEqual(len(calls), len(stoptimes), 'Same number of calls as stop times')
 
-                self.assertTrue(monotonically_increasing([x['call_time'] for x in calls]), 'Monotonically increasing call times')
+                self.assertTrue(monotonically_increasing([x['call_time']
+                                                          for x in calls]), 'Monotonically increasing call times')
                 self.assertEqual(len(calls), len(set(c['call_time'] for c in calls)), 'No duplicate calls')
 
     def test_vehicle_query(self):
         args = {'vehicle': self.vehicle_id, 'date': self.service_date}
 
         with self._connection.cursor() as curs:
-            curs.execute(inferno.VEHICLE_QUERY, args)
+            curs.execute(inferno.VEHICLE_QUERY.format('positions'), args)
             result = curs.fetchall()
 
         self.assertTrue(all(result[0]))
@@ -118,35 +121,43 @@ class TestInferno(unittest.TestCase):
         for run in runs:
             # Same vehicle in every run
             try:
-                assert len(set([r['vehicle_id'] for r in run])) == 1
+                self.assertEqual(len(set([r['vehicle_id'] for r in run])), 1, 'Same vehicle in every run')
             except AssertionError:
                 raise AssertionError(set([r['vehicle_id'] for r in run]))
 
             # Only one trip id per run
             try:
-                assert len(set([r['trip_id'] for r in run])) == 1
+                self.assertEqual(len(set([r['trip_id'] for r in run])), 1, 'only one trip id per run')
             except AssertionError:
                 raise AssertionError(set([r['trip_id'] for r in run]))
 
             # increasing distance
             try:
-                self.assertTrue(increasing([r['distance'] for r in run]))
+                self.assertTrue(increasing([r['distance'] for r in run]), 'increasing distance')
             except AssertionError:
-                raise AssertionError([(r['distance'], j['distance']) for r, j in zip(run, run[1:]) if r['distance'] > j['distance']])
+                errs = [(i, datetime.fromtimestamp(r['timestamp']).strftime('%c'), r['distance']) for i, r in enumerate(run, 1)]
+                # errs = [(datetime.fromtimestamp(r['timestamp']).strftime('%c'), datetime.fromtimestamp(j['timestamp']).strftime('%c'))
+                        # for r, j in zip(run, run[1:]) if r['distance'] > j['distance']]
+                raise AssertionError(errs)
 
     def test_filter_positions(self):
         with self._connection.cursor() as cursor:
             # Check that imaginary vehicle returns nothing
-            runs = inferno.filter_positions(cursor, self.service_date, 'magic schoolbus')
+            runs = inferno.filter_positions(cursor, self.service_date, vehicle='magic schoolbus')
             self.assertEqual(len(runs), 0)
 
-            runs = inferno.filter_positions(cursor, self.service_date, self.vehicle_id)
-            runs2 = inferno.filter_positions(cursor, '2017-05-20', '7149')
+            runs = inferno.filter_positions(cursor, self.service_date, vehicle=self.vehicle_id)
+            runs2 = inferno.filter_positions(cursor, self.service_date, vehicle='7149')
 
         self.assertIsInstance(runs, list)
-
-        self._run_tst(runs)
-        self._run_tst(runs2)
+        try:
+            self._run_tst(runs)
+        except AssertionError:
+            raise AssertionError('Run test failed for', self.service_date, self.vehicle_id)
+        try:
+            self._run_tst(runs2)
+        except AssertionError:
+            raise AssertionError('Run test failed for', self.service_date, '7149')
 
     def test_track_vehicle(self):
         inferno.track_vehicle(self.vehicle_id, 'calls', self.service_date, self.connstr)
