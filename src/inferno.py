@@ -64,7 +64,7 @@ SELECT
     stop_sequence seq,
     ROUND(length * careful_locate(the_geom, ST_SetSRID(ST_MakePoint(longitude, latitude), 4326),
         (dist_along_route / length)::numeric, 0.05)::numeric, 2) AS distance
-FROM positions p
+FROM {0} p
     LEFT JOIN gtfs_trips USING (trip_id)
     -- TODO: change to LEFT JOIN when fix implemented for orphan stops
     INNER JOIN gtfs_stop_times st USING (feed_index, trip_id, stop_id)
@@ -82,7 +82,7 @@ ORDER BY
 """
 
 SELECT_VEHICLE = """SELECT DISTINCT vehicle_id
-    FROM positions WHERE service_date = %s"""
+    FROM {0} WHERE service_date = %s"""
 
 SELECT_STOPTIMES = """SELECT
     stop_id AS id,
@@ -164,16 +164,17 @@ def samerun(a, b):
     ))
 
 
-def filter_positions(cursor, date, vehicle=None):
+def filter_positions(cursor, date, positions_table=None, vehicle=None):
     '''
     Compile list of positions for a vehicle, using a list of positions
     and filtering based on positions that reflect change in pattern or next_stop.
     '''
     runs = []
     prev = {}
+    query = VEHICLE_QUERY.format(positions_table or 'positions')
 
     # load up cursor with every position for vehicle
-    cursor.execute(VEHICLE_QUERY, {'vehicle': vehicle, 'date': date})
+    cursor.execute(query, {'vehicle': vehicle, 'date': date})
     if cursor.rowcount == 0:
         logging.warning('No rows found for %s on %s', vehicle, date)
         return []
@@ -306,11 +307,12 @@ def increasing(L):
     return all(x < y for x, y in zip(L, L[1:]))
 
 
-def track_vehicle(vehicle_id, table, date, connectionstring):
+def track_vehicle(vehicle_id, calls_table, date, connectionstring, positions_table=None):
+    positions_table = positions_table or 'positions'
     with psycopg2.connect(connectionstring) as conn:
         logging.info('STARTING %s', vehicle_id)
         with conn.cursor() as cursor:
-            runs = filter_positions(cursor, date, vehicle_id)
+            runs = filter_positions(cursor, date, positions_table, vehicle_id)
             # Counter is just for logging.
             lenc = 0
 
@@ -338,7 +340,7 @@ def track_vehicle(vehicle_id, table, date, connectionstring):
 
                 # write calls to sink
                 cursor.executemany(
-                    INSERT.format(table),
+                    INSERT.format(calls_table),
                     [dict(trip=trip_id, vehicle=vehicle_id, **c) for c in calls]
                 )
                 lenc += len(calls)
@@ -352,7 +354,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('connectionstring', type=str)
     parser.add_argument('date', type=str)
-    parser.add_argument('--table', type=str, default='calls')
+    parser.add_argument('--calls-table', type=str, default='calls')
+    parser.add_argument('--positions-table', type=str, default='positions')
     parser.add_argument('--vehicle', type=str)
 
     args = parser.parse_args()
@@ -364,13 +367,14 @@ def main():
     else:
         with psycopg2.connect(args.connectionstring) as conn:
             with conn.cursor() as cursor:
-                cursor.execute(SELECT_VEHICLE, (args.date,))
+                cursor.execute(SELECT_VEHICLE.format(args.positions_table), (args.date,))
                 vehicles = [x[0] for x in cursor.fetchall()]
 
     itervehicles = zip(vehicles,
-                       cycle([args.table]),
+                       cycle([args.calls_table]),
                        cycle([args.date]),
-                       cycle([args.connectionstring])
+                       cycle([args.connectionstring]),
+                       cycle([args.positions_table]),
                        )
 
     for i in itervehicles:

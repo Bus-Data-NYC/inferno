@@ -3,10 +3,32 @@ shell = bash
 PYTHON = python3.5
 
 PSQLFLAGS =
-DATABASE = nycbus
+PG_HOST =
+PG_USER =
+PG_PASSWORD =
+PG_DATABASE = nycbus
 PSQL = psql $(DATABASE) $(PSQLFLAGS)
 
-TABLE = calls
+CONNECTION = dbname=$(PG_DATABASE)
+
+ifdef PG_HOST
+CONNECTION += host=$(PG_HOST)
+endif
+
+ifdef PG_PORT
+CONNECTION += port=$(PG_USER)
+endif
+
+ifdef PG_USER
+CONNECTION += user=$(PG_USER)
+endif
+
+ifdef PG_PASSWORD
+CONNECTION += password=$(PG_USER)
+endif
+
+CALLS = calls
+POSITIONS = rt_vehicle_positions
 
 months = 01 02 03 04 05 06 07 08 09 10 11 12
 
@@ -20,7 +42,7 @@ $(foreach y,$(years),$(addprefix calls-$(y)-,$(months))): calls-%:
 	$(MAKE) calls-day-$*-{01..$(shell date -d "$*-1 + 1 month - 1 day" "+%d")}
 
 calls-day-%:
-	$(PYTHON) src/inferno.py "dbname=$(DATABASE) $(PSQLFLAGS)" $* --table $(TABLE)
+	$(PYTHON) src/inferno.py "$(CONNECTION)" $* --calls-table $(CALLS) --positions-table $(POSITIONS)
 
 test: | clean-test load-test
 	$(PYTHON) -m coverage run src/test.py -q
