@@ -28,6 +28,10 @@ class TestInferno(unittest.TestCase):
     vehicle_id = '8500'
     service_date = '2017-05-20'
 
+    sequence_data = tuple({'seq': x[0], 'distance': x[1]} for x in [
+        (25, 6515.72), (26, 6763.42), (27, 6856.14), (28, 6848.21),
+        (29, 6848.21), (31, 6848.21), (30, 6848.21)])
+
     @classmethod
     def setUpClass(cls):
         psycopg2.extensions.register_type(inferno.DEC2FLOAT)
@@ -78,14 +82,32 @@ class TestInferno(unittest.TestCase):
     def test_mask(self):
         a = [1, 2, False, 3]
         def key(a, b):
-            return a and b
-        self.assertSequenceEqual([1, 2], inferno.mask2(a, key))
+            return bool(a and b)
+        self.assertSequenceEqual([1, 2, 3], inferno.mask(a, key))
 
         obj = [{'seq': 1}, {'seq': 2}, {'seq': 3}]
-        self.assertSequenceEqual(obj, inferno.mask2(obj, inferno.compare_seq))
+        self.assertSequenceEqual(obj, inferno.mask(obj, inferno.compare_seq))
 
         wrong = [{'seq': 1}, {'seq': 2}, {'seq': 0}, {'seq': 3}]
-        self.assertSequenceEqual(obj, inferno.mask2(wrong, inferno.compare_seq))
+        self.assertSequenceEqual(obj, inferno.mask(wrong, inferno.compare_seq))
+
+        lis = [1, 2, 3, 2, 2, 2, 4, 5]
+        result = inferno.mask(lis, lambda x, y: x >= y)
+        self.assertEqual(result, [1, 2, 3, 4, 5])
+
+    def test_compare_dist(self):
+        result = inferno.mask(self.sequence_data, inferno.compare_dist)
+        assert increasing([x['distance'] for x in result])
+
+    def compare_seq(self):
+        a, b = {'seq': 1}, {'seq': 2}
+
+        self.assertFalse(inferno.compare_seq(a, b))
+        self.assertTrue(inferno.compare_seq(b, a))
+        self.assertTrue(inferno.compare_seq(a, a))
+
+        result = inferno.mask(self.sequence_data, inferno.compare_seq)
+        assert increasing([x['seq'] for x in result])
 
     def test_desc2fn(self):
         nt = namedtuple('a', ['name'])

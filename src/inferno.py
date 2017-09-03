@@ -130,15 +130,17 @@ def common(lis: list):
     return Counter(lis).most_common(1)[0][0]
 
 
-def mask2(lis: list, key: Callable) -> list:
+def mask(lis: list, key: Callable) -> list:
     '''
     Create a mask on `lis` using the `key` function.
     `key` will be evaluated on pairs of items in `lis`.
     Returned list will only include items where `key` evaluates to True.
     '''
-    filt = (key(x, y) for x, y in zip(lis[1:], lis))
-    ch = chain([True], filt)
-    return list(compress(lis, ch))
+    result = [lis[0]]
+    for item in lis[1:]:
+        if key(item, result[-1]):
+            result.append(item)
+    return result
 
 
 def desc2fn(description: tuple) -> tuple:
@@ -153,6 +155,12 @@ def compare_seq(x, y):
         # Be lenient when there's bad data: return True when None.
         return x['seq'] is None or y['seq'] is None
 
+def compare_dist(a, b):
+    try:
+        return a['distance'] >= b['distance']
+    except TypeError:
+        # Don't be lenient when there's bad data: return False.
+        return False
 
 def samerun(a, b):
     '''Check if two positions belong to the same run'''
@@ -202,7 +210,7 @@ def filter_positions(cursor, date, positions_table=None, vehicle=None):
 
     # filter out any runs that start the next day
     # mask runs to eliminate out-of-order stop sequences
-    runs = [mask2(run, compare_seq) for run in runs
+    runs = [mask(run, key=lambda a, b: compare_seq(a, b) and compare_dist(a, b)) for run in runs
             if len(run) > 2
             and run[0]['service_date'].isoformat() == date
             and len(set(r['seq'] for r in run)) > 1
