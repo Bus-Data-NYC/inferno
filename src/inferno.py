@@ -48,7 +48,7 @@ STOP_THRESHOLD = 30.48
 # "positions"."dist_along_route" column to limit the shape_geom LineString to
 # just the half of the line.
 VEHICLE_QUERY = """WITH service AS (
-    -- give leeway for broken service_date at the very end or start of day
+    -- give leeway for broken trip_start_date/service_date at the very end or start of day
     -- get service date in agency timezone for valid comparison to timestamp_utc
     SELECT
         feed_index,
@@ -57,10 +57,10 @@ VEHICLE_QUERY = """WITH service AS (
     FROM gtfs_agency
 )
 SELECT
-    EXTRACT(EPOCH FROM timestamp_utc) AS timestamp,
+    EXTRACT(EPOCH FROM timestamp) AS timestamp,
     vehicle_id,
     trip_id,
-    service_date,
+    trip_start_date AS service_date,
     stop_sequence seq,
     ROUND(length * careful_locate(the_geom, ST_SetSRID(ST_MakePoint(longitude, latitude), 4326),
         (dist_along_route / length)::numeric, 0.05)::numeric, 2) AS distance
@@ -73,16 +73,16 @@ FROM {0} p
 WHERE
     vehicle_id = %(vehicle)s
     AND (
-        service_date = date %(date)s
-        OR timestamp_utc BETWEEN service.left AND service.right
+        trip_start_date = date %(date)s
+        OR timestamp BETWEEN service.left AND service.right
     )
 ORDER BY
     trip_id,
-    timestamp_utc
+    timestamp
 """
 
 SELECT_VEHICLE = """SELECT DISTINCT vehicle_id
-    FROM {0} WHERE service_date = %s"""
+    FROM {0} WHERE trip_start_date = %s"""
 
 SELECT_STOPTIMES = """SELECT
     stop_id AS id,

@@ -1,12 +1,12 @@
 DROP TABLE IF EXISTS positions;
 CREATE TABLE positions (
-    timestamp_utc TIMESTAMP WITH TIME ZONE NOT NULL,
+    timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
     vehicle_id TEXT NOT NULL,
     latitude NUMERIC(8, 6) NOT NULL,
     longitude NUMERIC(9, 6) NOT NULL,
     bearing NUMERIC(5, 2),
     progress INTEGER,
-    service_date DATE NOT NULL,
+    trip_start_date DATE NOT NULL,
     trip_id TEXT NOT NULL,
     block TEXT,
     stop_id TEXT,
