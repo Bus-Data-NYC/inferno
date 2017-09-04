@@ -237,9 +237,10 @@ def get_stoptimes(cursor, tripid, date):
     return [dict(zip(fieldnames, row)) for row in cursor.fetchall()]
 
 
-def extrapolate(x, y, vals):
+def extrapolate(x, y, stoptimes, method=None):
     coefficients = np.polyfit(x, y, 1)
-    return np.poly1d(coefficients)(vals)
+    result = np.poly1d(coefficients)([x['distance'] for x in stoptimes])
+    return [call(s, t, method) for s, t in zip(stoptimes, result)]
 
 
 def call(stoptime, seconds, method=None):
@@ -265,45 +266,41 @@ def generate_calls(run: list, stoptimes: list) -> list:
         run: list generated from enumerate(positions)
         stoptimes: list of scheduled stoptimes for this trip
     '''
-    calls = []
     obs_distances = [p['distance'] for p in run]
     obs_times = [p['timestamp'] for p in run]
     stop_positions = [x['distance'] for x in stoptimes]
     stop_seq = [x['seq'] for x in stoptimes]
+    e = 4
 
     # Get the range of stop positions that can be interpolated based on data.
     # The rest will be extrapolated
     si = bisect_left(stop_positions, obs_distances[0])
     ei = bisect(stop_positions, obs_distances[-1])
 
-    if len(stop_positions[si:ei]) == 0:
+    if len(stoptimes[si:ei]) == 0:
         return []
-
-    # Extrapolate back for stops that occurred before observed positions.
-    if si > 0:
-        try:
-            extrapolated = extrapolate(obs_distances[:4], obs_times[:4], stop_positions[:si])
-            calls = [call(st, ex, 'S') for ex, st in zip(extrapolated, stoptimes[:si])]
-        except ValueError as e:
-            logging.error(e)
-        except TypeError:
-            logging.error('Error extrapolating early stops. index: %s', si)
-            logging.error('positions %s, sequence: %s', stop_positions[:si], stop_seq[:si])
 
     # Interpolate main chunk of positions.
     interpolated = np.interp(stop_positions[si:ei], obs_distances, obs_times)
-    calls.extend([call(stop, secs) for stop, secs in zip(stoptimes[si:ei], interpolated)])
+    calls = [call(stop, secs) for stop, secs in zip(stoptimes[si:ei], interpolated)]
+
+    # Extrapolate back for stops that occurred before observed positions.
+    if si > 0 and len(run) > len(stoptimes) - si:
+        try:
+            backward = extrapolate(obs_distances[:e], obs_times[:e], stoptimes[:si], 'S')
+            calls = backward + calls
+        except Exception as error:
+            logging.warning('%s. Ignoring back extrapolation', error)
+            logging.warning('    positions %s, sequence: %s, stops: %s', stop_positions[:si], stop_seq[:si], stop_positions[:si],)
 
     # Extrapolate forward to the stops after the observed positions.
-    if ei < len(stoptimes):
+    if ei < len(stoptimes) and len(run) > len(stoptimes) - ei:
         try:
-            extrapolated = extrapolate(obs_distances[-4:], obs_times[-4:], stop_positions[ei:])
-            calls.extend([call(st, ex, 'E') for ex, st in zip(extrapolated, stoptimes[ei:])])
-        except ValueError as e:
-            logging.error(e)
-        except TypeError:
-            logging.error('Error extrapolating late stops. index: %s', ei)
-            logging.error('positions %s, sequence: %s', stop_positions[ei:], stop_seq[ei:])
+            forward = extrapolate(obs_distances[-e:], obs_times[-e:], stoptimes[ei:], 'E')
+            calls.extend(forward)
+        except Exception as error:
+            logging.warning('%s. Ignoring forward extrapolation', error)
+            logging.warning('positions %s, sequence: %s', stop_positions[ei:], stop_seq[ei:])
 
     assert not decreasing([x['call_time'] for x in calls])
 
