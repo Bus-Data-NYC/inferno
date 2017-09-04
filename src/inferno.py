@@ -2,7 +2,7 @@
 from __future__ import division
 import sys
 import os
-from bisect import bisect
+from bisect import bisect, bisect_left
 from typing import Callable
 from datetime import datetime, timedelta
 from multiprocessing import Pool
@@ -273,7 +273,7 @@ def generate_calls(run: list, stoptimes: list) -> list:
 
     # Get the range of stop positions that can be interpolated based on data.
     # The rest will be extrapolated
-    si = bisect(stop_positions, obs_distances[0])
+    si = bisect_left(stop_positions, obs_distances[0])
     ei = bisect(stop_positions, obs_distances[-1])
 
     if len(stop_positions[si:ei]) == 0:
