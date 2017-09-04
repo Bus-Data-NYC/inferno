@@ -19,7 +19,7 @@ import pytz
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 loghandler = logging.StreamHandler(sys.stdout)
-logformatter = logging.Formatter(fmt='%(levelname)s: %(message)s')
+logformatter = logging.Formatter(fmt='%(levelname)s (%(lineno)3d) %(message)s')
 loghandler.setFormatter(logformatter)
 logger.addHandler(loghandler)
 
@@ -302,12 +302,16 @@ def generate_calls(run: list, stoptimes: list) -> list:
             logging.warning('%s. Ignoring forward extrapolation', error)
             logging.warning('positions %s, sequence: %s', stop_positions[ei:], stop_seq[ei:])
 
-    assert not decreasing([x['call_time'] for x in calls])
+    try:
+        assert not decreasing([x['call_time'] for x in calls])
+    except AssertionError:
+        logging.error('decreasing calls. trip %s vehicle %s', run[0]['trip_id'], run[0]['vehicle_id'])
+        return []
 
     try:
         assert increasing([x['call_time'] for x in calls])
-    except:
-        print('non-increasing calls', run[0]['trip_id'], run[0]['vehicle_id'], file=sys.stderr)
+    except AssertionError:
+        logging.info('non-increasing calls. trip %s vehicle %s', run[0]['trip_id'], run[0]['vehicle_id'])
 
     return calls
 
@@ -370,6 +374,7 @@ def main():
     parser.add_argument('--calls-table', type=str, default='calls')
     parser.add_argument('--positions-table', type=str, default='positions')
     parser.add_argument('--vehicle', type=str)
+    parser.add_argument('--debug', action='store_true')
 
     args = parser.parse_args()
 
@@ -390,13 +395,14 @@ def main():
                        cycle([args.positions_table]),
                        )
 
-    for i in itervehicles:
-        track_vehicle(*i)
+    if args.debug:
+        for i in itervehicles:
+            track_vehicle(*i)
+    else:
+        with Pool(os.cpu_count()) as pool:
+            pool.starmap(track_vehicle, itervehicles)
 
-    with Pool(os.cpu_count()) as pool:
-        pool.starmap(track_vehicle, itervehicles)
-
-    logging.info("SUCCESS: Committed %s", args.date)
+    logging.info("completed %s", args.date)
 
 
 if __name__ == '__main__':
