@@ -388,6 +388,8 @@ def main():
                 cursor.execute(SELECT_VEHICLE.format(args.positions_table), (args.date,))
                 vehicles = [x[0] for x in cursor.fetchall()]
 
+        logging.info('Found %s vehicles', len(vehicles))
+
     itervehicles = zip(vehicles,
                        cycle([args.calls_table]),
                        cycle([args.date]),
@@ -396,6 +398,7 @@ def main():
                        )
 
     if args.debug:
+        logging.info("debug mode")
         for i in itervehicles:
             track_vehicle(*i)
     else:
