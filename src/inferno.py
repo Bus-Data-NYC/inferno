@@ -63,7 +63,7 @@ SELECT
     trip_start_date AS service_date,
     stop_sequence seq,
     ROUND(length * careful_locate(the_geom, ST_SetSRID(ST_MakePoint(longitude, latitude), 4326),
-        (dist_along_route / length)::numeric, 0.05)::numeric, 2) AS distance
+        (dist_along_route / length)::numeric, 0.2)::numeric, 2) AS distance
 FROM {0} p
     LEFT JOIN gtfs_trips USING (trip_id)
     -- TODO: change to LEFT JOIN when fix implemented for orphan stops
