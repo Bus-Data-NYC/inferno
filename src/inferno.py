@@ -23,7 +23,7 @@ logformatter = logging.Formatter(fmt='%(levelname)s: %(message)s')
 loghandler.setFormatter(logformatter)
 logger.addHandler(loghandler)
 
-warnings.simplefilter('error')
+warnings.simplefilter('ignore')
 
 DEC2FLOAT = psycopg2.extensions.new_type(
     psycopg2.extensions.DECIMAL.values,
@@ -155,12 +155,14 @@ def compare_seq(x, y):
         # Be lenient when there's bad data: return True when None.
         return x['seq'] is None or y['seq'] is None
 
+
 def compare_dist(a, b):
     try:
         return a['distance'] >= b['distance']
     except TypeError:
         # Don't be lenient when there's bad data: return False.
         return False
+
 
 def samerun(a, b):
     '''Check if two positions belong to the same run'''
@@ -303,16 +305,22 @@ def generate_calls(run: list, stoptimes: list) -> list:
             logging.error('Error extrapolating late stops. index: %s', ei)
             logging.error('positions %s, sequence: %s', stop_positions[ei:], stop_seq[ei:])
 
+    assert not decreasing([x['call_time'] for x in calls])
+
     try:
         assert increasing([x['call_time'] for x in calls])
     except:
-        print('non-increasing calls', run[0], file=sys.stderr)
+        print('non-increasing calls', run[0]['trip_id'], run[0]['vehicle_id'], file=sys.stderr)
 
     return calls
 
 
 def increasing(L):
-    return all(x < y for x, y in zip(L, L[1:]))
+    return all(x <= y for x, y in zip(L, L[1:]))
+
+
+def decreasing(L):
+    return all(x > y for x, y in zip(L, L[1:]))
 
 
 def track_vehicle(vehicle_id, calls_table, date, connectionstring, positions_table=None):
