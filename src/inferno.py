@@ -8,10 +8,11 @@ from datetime import datetime, timedelta
 from multiprocessing import Pool
 import logging
 import warnings
-from collections import Counter
+from collections import Counter, namedtuple
 from itertools import cycle
 import argparse
 import psycopg2
+from psycopg2.extras import NamedTupleCursor
 import numpy as np
 import pytz
 
@@ -150,15 +151,15 @@ def desc2fn(description: tuple) -> tuple:
 
 def compare_seq(x, y):
     try:
-        return x['seq'] >= y['seq']
+        return x.seq >= y.seq
     except TypeError:
         # Be lenient when there's bad data: return True when None.
-        return x['seq'] is None or y['seq'] is None
+        return x.seq is None or y.seq is None
 
 
 def compare_dist(a, b):
     try:
-        return a['distance'] >= b['distance']
+        return a.distance >= b.distance
     except TypeError:
         # Don't be lenient when there's bad data: return False.
         return False
@@ -168,9 +169,9 @@ def samerun(a, b):
     '''Check if two positions belong to the same run'''
     return all((
         # Trip is the same.
-        a.get('trip_id', None) == b['trip_id'],
+        getattr(a, 'trip_id', None) == b.trip_id,
         # Sequence is the same or higher.
-        a.get('seq', 0) <= b['seq'],
+        getattr(a, 'seq', 0) <= b.seq,
     ))
 
 
@@ -180,7 +181,6 @@ def filter_positions(cursor, date, positions_table=None, vehicle=None):
     and filtering based on positions that reflect change in pattern or next_stop.
     '''
     runs = []
-    prev = {}
     query = VEHICLE_QUERY.format(positions_table or 'positions')
 
     # load up cursor with every position for vehicle
@@ -189,9 +189,8 @@ def filter_positions(cursor, date, positions_table=None, vehicle=None):
         logging.warning('No rows found for %s on %s', vehicle, date)
         return []
 
-    fieldnames = desc2fn(cursor.description)
-    position = dict(zip(fieldnames, cursor.fetchone()))
-
+    prev = namedtuple('prev', [])()
+    position = cursor.fetchone()
     while position is not None:
         # If trip IDs differ
         if not samerun(prev, position):
@@ -199,23 +198,19 @@ def filter_positions(cursor, date, positions_table=None, vehicle=None):
             runs.append([])
 
         # Check if distance is the same or greater, otherwise discard.
-        if prev.get('distance', 0) <= position['distance']:
+        if getattr(prev, 'distance', 0) <= position.distance:
             # append the position
             runs[-1].append(position)
 
         prev = position
-
-        try:
-            position = dict(zip(fieldnames, cursor.fetchone()))
-        except TypeError:
-            position = None
+        position = cursor.fetchone()
 
     # filter out any runs that start the next day
     # mask runs to eliminate out-of-order stop sequences
     runs = [mask(run, key=lambda a, b: compare_seq(a, b) and compare_dist(a, b)) for run in runs
             if len(run) > 2
-            and run[0]['service_date'].isoformat() == date
-            and len(set(r['seq'] for r in run)) > 1
+            and run[0].date.isoformat() == date
+            and len(set(r.seq for r in run)) > 1
             ]
 
     return runs
@@ -225,21 +220,18 @@ def get_stoptimes(cursor, tripid, date):
     logging.debug('Fetching stoptimes for %s', tripid)
     fields = {'trip': tripid, 'date': date}
     cursor.execute(SELECT_STOPTIMES, fields)
-    fieldnames = desc2fn(cursor.description)
 
-    # The feed indices where corrput. Run this again without checking the date range.
     if cursor.rowcount == 0:
         logging.warning("Couldn't find any stoptimes in date range, running simple query: %s", tripid)
         logging.warning(cursor.query.decode('utf8'))
         cursor.execute(SELECT_STOPTIMES_PLAIN, fields)
-        fieldnames = desc2fn(cursor.description)
 
-    return [dict(zip(fieldnames, row)) for row in cursor.fetchall()]
+    return cursor.fetchall()
 
 
 def extrapolate(x, y, stoptimes, method=None):
     coefficients = np.polyfit(x, y, 1)
-    result = np.poly1d(coefficients)([x['distance'] for x in stoptimes])
+    result = np.poly1d(coefficients)([x.distance for x in stoptimes])
     return [call(s, t, method) for s, t in zip(stoptimes, result)]
 
 
@@ -250,11 +242,11 @@ def call(stoptime, seconds, method=None):
     '''
     calltime = datetime.utcfromtimestamp(seconds).replace(tzinfo=pytz.UTC)
     return {
-        'route_id': stoptime['route_id'],
-        'direction_id': stoptime['direction_id'],
-        'stop_id': stoptime['id'],
+        'route_id': stoptime.route_id,
+        'direction_id': stoptime.direction_id,
+        'stop_id': stoptime.id,
         'call_time': calltime,
-        'deviation': calltime - stoptime['datetime'],
+        'deviation': calltime - stoptime.datetime,
         'source': method or 'I'
     }
 
@@ -266,10 +258,10 @@ def generate_calls(run: list, stoptimes: list) -> list:
         run: list generated from enumerate(positions)
         stoptimes: list of scheduled stoptimes for this trip
     '''
-    obs_distances = [p['distance'] for p in run]
-    obs_times = [p['timestamp'] for p in run]
-    stop_positions = [x['distance'] for x in stoptimes]
-    stop_seq = [x['seq'] for x in stoptimes]
+    obs_distances = [p.distance for p in run]
+    obs_times = [p.timestamp for p in run]
+    stop_positions = [x.distance for x in stoptimes]
+    stop_seq = [x.seq for x in stoptimes]
     e = 4
 
     # Get the range of stop positions that can be interpolated based on data.
@@ -305,13 +297,13 @@ def generate_calls(run: list, stoptimes: list) -> list:
     try:
         assert not decreasing([x['call_time'] for x in calls])
     except AssertionError:
-        logging.error('decreasing calls. trip %s vehicle %s', run[0]['trip_id'], run[0]['vehicle_id'])
+        logging.error('decreasing calls. trip %s vehicle %s', run[0].trip_id, run[0].vehicle_id)
         return []
 
     try:
         assert increasing([x['call_time'] for x in calls])
     except AssertionError:
-        logging.info('non-increasing calls. trip %s vehicle %s', run[0]['trip_id'], run[0]['vehicle_id'])
+        logging.info('non-increasing calls. trip %s vehicle %s', run[0].trip_id, run[0].vehicle_id)
 
     return calls
 
@@ -328,7 +320,7 @@ def track_vehicle(vehicle_id, calls_table, date, connectionstring, positions_tab
     positions_table = positions_table or 'positions'
     with psycopg2.connect(connectionstring) as conn:
         logging.info('STARTING %s', vehicle_id)
-        with conn.cursor() as cursor:
+        with conn.cursor(cursor_factory=NamedTupleCursor) as cursor:
             runs = filter_positions(cursor, date, positions_table, vehicle_id)
             # Counter is just for logging.
             lenc = 0
@@ -343,12 +335,12 @@ def track_vehicle(vehicle_id, calls_table, date, connectionstring, positions_tab
                     continue
 
                 # Assume most common trip is the correct one.
-                trip_id = common([x['trip_id'] for x in run])
+                trip_id = common([x.trip_id for x in run])
 
                 # Get the scheduled list of stops for this trip.
                 stoptimes = get_stoptimes(cursor, trip_id, date)
 
-                if any(x['distance'] is None for x in stoptimes):
+                if any(x.distance is None for x in stoptimes):
                     logging.warning('Missing stoptimes for %s', trip_id)
                     continue
 
