@@ -250,7 +250,7 @@ def call(stoptime, seconds, method=None):
     }
 
 
-def generate_calls(run: list, stoptimes: list) -> list:
+def generate_calls(run: list, stops: list) -> list:
     '''
     list of calls to be written
     Args:
@@ -259,8 +259,7 @@ def generate_calls(run: list, stoptimes: list) -> list:
     '''
     obs_distances = [p.distance for p in run]
     obs_times = [p.timestamp for p in run]
-    stop_positions = [x.distance for x in stoptimes]
-    stop_seq = [x.seq for x in stoptimes]
+    stop_positions = [x.distance for x in stops]
     e = 4
 
     # Get the range of stop positions that can be interpolated based on data.
@@ -268,12 +267,12 @@ def generate_calls(run: list, stoptimes: list) -> list:
     si = bisect_left(stop_positions, obs_distances[0])
     ei = bisect(stop_positions, obs_distances[-1])
 
-    if len(stoptimes[si:ei]) == 0:
+    if len(stops[si:ei]) == 0:
         return []
 
     # Interpolate main chunk of positions.
     interpolated = np.interp(stop_positions[si:ei], obs_distances, obs_times)
-    calls = [call(stop, secs) for stop, secs in zip(stoptimes[si:ei], interpolated)]
+    calls = [call(stop, secs) for stop, secs in zip(stops[si:ei], interpolated)]
 
     # Extrapolate back for stops that occurred before observed positions.
     if si > 0 and len(run) > len(stoptimes) - si:
@@ -282,16 +281,16 @@ def generate_calls(run: list, stoptimes: list) -> list:
             calls = backward + calls
         except Exception as error:
             logging.warning('%s. Ignoring back extrapolation', error)
-            logging.warning('    positions %s, sequence: %s, stops: %s', stop_positions[:si], stop_seq[:si], stop_positions[:si],)
+            logging.warning('    positions %s, sequence: %s, stops: %s', stop_positions[:si], [x.seq for x in stops[:si]], stop_positions[:si],)
 
     # Extrapolate forward to the stops after the observed positions.
     if ei < len(stoptimes) and len(run) > len(stoptimes) - ei:
         try:
-            forward = extrapolate(obs_distances[-e:], obs_times[-e:], stoptimes[ei:], 'E')
+            forward = extrapolate(masked[-e:], stops[ei:], 'E')
             calls.extend(forward)
         except Exception as error:
             logging.warning('%s. Ignoring forward extrapolation', error)
-            logging.warning('positions %s, sequence: %s', stop_positions[ei:], stop_seq[ei:])
+            logging.warning('positions %s, sequence: %s', stop_positions[ei:], [x.seq for x in stops[ei:]])
 
     try:
         assert not decreasing([x['call_time'] for x in calls])
