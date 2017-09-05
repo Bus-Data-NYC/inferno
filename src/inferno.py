@@ -59,9 +59,8 @@ VEHICLE_QUERY = """WITH service AS (
 )
 SELECT
     EXTRACT(EPOCH FROM timestamp) AS timestamp,
-    vehicle_id,
     trip_id,
-    trip_start_date AS service_date,
+    trip_start_date date,
     stop_sequence seq,
     ROUND(length * careful_locate(the_geom, ST_SetSRID(ST_MakePoint(longitude, latitude), 4326),
         (dist_along_route / length)::numeric, 0.2)::numeric, 2) AS distance
