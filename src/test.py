@@ -60,12 +60,13 @@ class TestInferno(unittest.TestCase):
                 self.assertEqual(len(stoptimes), len(set(x.id for x in stoptimes)), 'No duplicate stoptimes')
 
                 calls = inferno.generate_calls(run, stoptimes)
-                self.assertGreater(len(calls), 0)
-                self.assertEqual(len(calls), len(stoptimes), 'Same number of calls as stop times')
+                self.assertGreater(len(calls), 0, 'non-zero calls')
 
-                self.assertTrue(monotonically_increasing([x.call_time
+                self.assertTrue(monotonically_increasing([x['call_time']
                                                           for x in calls]), 'Monotonically increasing call times')
-                self.assertEqual(len(calls), len(set(c.call_time for c in calls)), 'No duplicate calls')
+                self.assertEqual(len(calls), len(set(c['call_time'] for c in calls)), 'No duplicate calls')
+
+                self.assertEqual(len(calls), len(stoptimes), 'Same number of calls as stop times in (%s)' % trip)
 
     def test_vehicle_query(self):
         args = {'vehicle': self.vehicle_id, 'date': self.service_date}
@@ -156,8 +157,6 @@ class TestInferno(unittest.TestCase):
             except AssertionError:
                 errs = [(i, datetime.fromtimestamp(r.timestamp).strftime('%c'), r.distance)
                         for i, r in enumerate(run, 1)]
-                # errs = [(datetime.fromtimestamp(r['timestamp']).strftime('%c'), datetime.fromtimestamp(j['timestamp']).strftime('%c'))
-                        # for r, j in zip(run, run[1:]) if r['distance'] > j['distance']]
                 raise AssertionError(errs)
 
     def test_filter_positions(self):
