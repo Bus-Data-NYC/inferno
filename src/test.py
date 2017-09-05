@@ -160,7 +160,8 @@ class TestInferno(unittest.TestCase):
             try:
                 self.assertTrue(increasing([r.distance for r in run]), 'increasing distance')
             except AssertionError:
-                errs = [(i, datetime.fromtimestamp(r['timestamp']).strftime('%c'), r['distance']) for i, r in enumerate(run, 1)]
+                errs = [(i, datetime.fromtimestamp(r.timestamp).strftime('%c'), r.distance)
+                        for i, r in enumerate(run, 1)]
                 # errs = [(datetime.fromtimestamp(r['timestamp']).strftime('%c'), datetime.fromtimestamp(j['timestamp']).strftime('%c'))
                         # for r, j in zip(run, run[1:]) if r['distance'] > j['distance']]
                 raise AssertionError(errs)
