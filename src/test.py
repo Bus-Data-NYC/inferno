@@ -144,12 +144,6 @@ class TestInferno(unittest.TestCase):
 
     def _run_tst(self, runs):
         for run in runs:
-            # Same vehicle in every run
-            try:
-                self.assertEqual(len(set([r['vehicle_id'] for r in run])), 1, 'Same vehicle in every run')
-            except AssertionError:
-                raise AssertionError(set([r['vehicle_id'] for r in run]))
-
             # Only one trip id per run
             try:
                 self.assertEqual(len(set([r.trip_id for r in run])), 1, 'only one trip id per run')
