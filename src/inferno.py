@@ -40,6 +40,10 @@ MAX_TIME_BETWEEN_STOPS = timedelta(seconds=60 * 30)
 # beginning at 100 ft. Nevertheless, we're doing 100 ft
 STOP_THRESHOLD = 30.48
 
+# Minimum distance between positions when extrapolating.
+# When zero, identical positions are allowed, which can produce crazy results
+MIN_EXTRAP_DIST = 5
+
 # Doing one complicated thing in this query.
 # Some bus routes are loops with tails (e.g. B74):
 #    +--+
@@ -228,7 +232,9 @@ def get_stoptimes(cursor, tripid, date):
     return cursor.fetchall()
 
 
-def extrapolate(x, y, stoptimes, method=None):
+def extrapolate(run, stoptimes, method=None):
+    x = [a.distance for a in run]
+    y = [a.timestamp for a in run]
     coefficients = np.polyfit(x, y, 1)
     result = np.poly1d(coefficients)([x.distance for x in stoptimes])
     return [call(s, t, method) for s, t in zip(stoptimes, result)]
@@ -275,16 +281,20 @@ def generate_calls(run: list, stops: list) -> list:
     calls = [call(stop, secs) for stop, secs in zip(stops[si:ei], interpolated)]
 
     # Extrapolate back for stops that occurred before observed positions.
-    if si > 0 and len(run) > len(stoptimes) - si:
+    # Second part of conditional establishes that we have enough to judge
+    # Goal is to only extrapolate based on unique distances
+    masked = mask(run, lambda x, y: x.distance > y.distance + MIN_EXTRAP_DIST)
+
+    if si > 0 and len(masked) > si + e:
         try:
-            backward = extrapolate(obs_distances[:e], obs_times[:e], stoptimes[:si], 'S')
+            backward = extrapolate(masked[:e], stops[:si], 'S')
             calls = backward + calls
         except Exception as error:
             logging.warning('%s. Ignoring back extrapolation', error)
             logging.warning('    positions %s, sequence: %s, stops: %s', stop_positions[:si], [x.seq for x in stops[:si]], stop_positions[:si],)
 
     # Extrapolate forward to the stops after the observed positions.
-    if ei < len(stoptimes) and len(run) > len(stoptimes) - ei:
+    if ei < len(stops) and len(masked) > e + ei:
         try:
             forward = extrapolate(masked[-e:], stops[ei:], 'E')
             calls.extend(forward)
