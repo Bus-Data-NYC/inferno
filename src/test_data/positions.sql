@@ -12,9 +12,9 @@ CREATE TABLE positions (
     stop_id TEXT,
     dist_along_route NUMERIC(8, 2),
     dist_from_stop NUMERIC(8, 2),
-    CONSTRAINT position_time_bus PRIMARY KEY (timestamp_utc, vehicle_id)
+    CONSTRAINT position_time_bus PRIMARY KEY (timestamp, vehicle_id)
 );
-INSERT INTO "positions" ("timestamp_utc","vehicle_id","latitude","longitude","service_date","trip_id","stop_id","dist_along_route","dist_from_stop")
+INSERT INTO "positions" ("timestamp","vehicle_id","latitude","longitude","trip_start_date","trip_id","stop_id","dist_along_route","dist_from_stop")
 VALUES
 (E'2017-05-20 20:00:52-04',7149,40.575477,-73.995158,E'2017-05-20',E'UP_B7-Weekday-SDon-119500_B74_605',E'305992',1315.6,142.63),
 (E'2017-05-20 20:01:25-04',7149,40.575159,-73.998025,E'2017-05-20',E'UP_B7-Weekday-SDon-119500_B74_605',E'305993',1496.16,78.5),
