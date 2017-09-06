@@ -20,7 +20,7 @@ import pytz
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 loghandler = logging.StreamHandler(sys.stdout)
-logformatter = logging.Formatter(fmt='%(levelname)s (%(lineno)3d) %(message)s')
+logformatter = logging.Formatter(fmt='%(levelname)s (%(lineno)3d) %(asctime)s %(message)s')
 loghandler.setFormatter(logformatter)
 logger.addHandler(loghandler)
 
@@ -52,15 +52,7 @@ MIN_EXTRAP_DIST = 5
 # ST_LineLocatePoint can't handle this, so we use the mostly-untrustworthy
 # "positions"."dist_along_route" column to limit the shape_geom LineString to
 # just the half of the line.
-VEHICLE_QUERY = """WITH service AS (
-    -- give leeway for broken trip_start_date/service_date at the very end or start of day
-    -- get service date in agency timezone for valid comparison to timestamp_utc
-    SELECT
-        feed_index,
-        %(date)s::timestamp at time zone agency_timezone - interval '1 HOURS' AS left,
-        %(date)s::timestamp at time zone agency_timezone + interval '29 HOURS' AS right
-    FROM gtfs_agency
-)
+VEHICLE_QUERY = """
 SELECT
     EXTRACT(EPOCH FROM timestamp) AS timestamp,
     trip_id,
@@ -73,13 +65,9 @@ FROM {0} p
     -- TODO: change to LEFT JOIN when fix implemented for orphan stops
     INNER JOIN gtfs_stop_times st USING (feed_index, trip_id, stop_id)
     LEFT JOIN gtfs_shape_geoms s USING (feed_index, shape_id)
-    LEFT JOIN service USING (feed_index)
 WHERE
     vehicle_id = %(vehicle)s
-    AND (
-        trip_start_date = date %(date)s
-        OR timestamp BETWEEN service.left AND service.right
-    )
+    AND trip_start_date = date %(date)s
 ORDER BY
     trip_id,
     timestamp
@@ -216,7 +204,6 @@ def filter_positions(cursor, date, positions_table=None, vehicle=None):
     # mask runs to eliminate out-of-order stop sequences
     runs = [mask(run, key=lambda a, b: compare_seq(a, b) and compare_dist(a, b)) for run in runs
             if len(run) > 2
-            and run[0].date.isoformat() == date
             and len(set(r.seq for r in run)) > 1
             ]
 
@@ -295,7 +282,8 @@ def generate_calls(run: list, stops: list) -> list:
             calls = backward + calls
         except Exception as error:
             logging.warning('%s. Ignoring back extrapolation', error)
-            logging.warning('    positions %s, sequence: %s, stops: %s', stop_positions[:si], [x.seq for x in stops[:si]], stop_positions[:si],)
+            logging.warning('    positions %s, sequence: %s, stops: %s', stop_positions[
+                            :si], [x.seq for x in stops[:si]], stop_positions[:si],)
 
     # Extrapolate forward to the stops after the observed positions.
     if ei < len(stops) and len(masked) > e:
@@ -309,13 +297,13 @@ def generate_calls(run: list, stops: list) -> list:
     try:
         assert not decreasing([x['call_time'] for x in calls])
     except AssertionError:
-        logging.error('decreasing calls. trip %s vehicle %s', run[0].trip_id, run[0].vehicle_id)
+        logging.error('decreasing calls. trip %s', run[0].trip_id)
         return []
 
     try:
         assert increasing([x['call_time'] for x in calls])
     except AssertionError:
-        logging.info('non-increasing calls. trip %s vehicle %s', run[0].trip_id, run[0].vehicle_id)
+        logging.info('non-increasing calls. trip %s', run[0].trip_id)
 
     return calls
 
