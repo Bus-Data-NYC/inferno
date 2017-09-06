@@ -88,6 +88,10 @@ ORDER BY
 SELECT_VEHICLE = """SELECT DISTINCT vehicle_id
     FROM {0} WHERE trip_start_date = %s"""
 
+SELECT_CALLED_VEHICLES = """SELECT vehicle_id FROM calls
+    WHERE source = 'I' AND call_time::date = %s
+    GROUP BY vehicle_id"""
+
 SELECT_STOPTIMES = """SELECT
     stop_id AS id,
     wall_time(date %(date)s, arrival_time, agency_timezone) AS datetime,
@@ -375,6 +379,7 @@ def main():
     parser.add_argument('--positions-table', type=str, default='positions')
     parser.add_argument('--vehicle', type=str)
     parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--incomplete', action='store_true', help='Restart an incomplete date')
 
     args = parser.parse_args()
 
@@ -385,8 +390,16 @@ def main():
     else:
         with psycopg2.connect(args.connectionstring) as conn:
             with conn.cursor() as cursor:
+                logging.info('Finding vehicles')
                 cursor.execute(SELECT_VEHICLE.format(args.positions_table), (args.date,))
                 vehicles = [x[0] for x in cursor.fetchall()]
+
+                if args.incomplete:
+                    logging.info('Removing already-called vehicles')
+                    cursor.execute(SELECT_CALLED_VEHICLES, (args.date,))
+                    called = set([x[0] for x in cursor.fetchall()])
+                    vehicles = set(vehicles).difference(called)
+                    logging.info('Removed %s', len(called))
 
         logging.info('Found %s vehicles', len(vehicles))
 
