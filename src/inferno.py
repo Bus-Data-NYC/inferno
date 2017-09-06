@@ -266,6 +266,7 @@ def generate_calls(run: list, stops: list) -> list:
     obs_distances = [p.distance for p in run]
     obs_times = [p.timestamp for p in run]
     stop_positions = [x.distance for x in stops]
+    # The number of positions to use when extrapolating.
     e = 4
 
     # Get the range of stop positions that can be interpolated based on data.
@@ -280,12 +281,11 @@ def generate_calls(run: list, stops: list) -> list:
     interpolated = np.interp(stop_positions[si:ei], obs_distances, obs_times)
     calls = [call(stop, secs) for stop, secs in zip(stops[si:ei], interpolated)]
 
-    # Extrapolate back for stops that occurred before observed positions.
-    # Second part of conditional establishes that we have enough to judge
     # Goal is to only extrapolate based on unique distances
     masked = mask(run, lambda x, y: x.distance > y.distance + MIN_EXTRAP_DIST)
 
-    if si > 0 and len(masked) > si + e:
+    # Extrapolate back for stops that occurred before observed positions.
+    if si > 0 and len(masked) > e:
         try:
             backward = extrapolate(masked[:e], stops[:si], 'S')
             calls = backward + calls
@@ -294,7 +294,7 @@ def generate_calls(run: list, stops: list) -> list:
             logging.warning('    positions %s, sequence: %s, stops: %s', stop_positions[:si], [x.seq for x in stops[:si]], stop_positions[:si],)
 
     # Extrapolate forward to the stops after the observed positions.
-    if ei < len(stops) and len(masked) > e + ei:
+    if ei < len(stops) and len(masked) > e:
         try:
             forward = extrapolate(masked[-e:], stops[ei:], 'E')
             calls.extend(forward)
