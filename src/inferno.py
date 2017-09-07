@@ -331,7 +331,7 @@ def track_vehicle(vehicle_id, calls_table, date, connectionstring, positions_tab
                     continue
                 elif len(run) <= 2:
                     logging.debug('short run (%d positions), v_id=%s, %s',
-                                  len(run), vehicle_id, run[0]['timestamp'])
+                                  len(run), vehicle_id, run[0].timestamp)
                     continue
 
                 # Assume most common trip is the correct one.
