@@ -54,7 +54,7 @@ MIN_EXTRAP_DIST = 5
 # just the half of the line.
 VEHICLE_QUERY = """
 SELECT
-    EXTRACT(EPOCH FROM timestamp) AS timestamp,
+    EXTRACT(EPOCH FROM timestamp) AS time,
     trip_id,
     trip_start_date date,
     stop_sequence seq,
@@ -225,7 +225,7 @@ def get_stoptimes(cursor, tripid, date):
 
 def extrapolate(run, stoptimes, method=None):
     x = [a.distance for a in run]
-    y = [a.timestamp for a in run]
+    y = [a.time for a in run]
     coefficients = np.polyfit(x, y, 1)
     result = np.poly1d(coefficients)([x.distance for x in stoptimes])
     return [call(s, t, method) for s, t in zip(stoptimes, result)]
@@ -255,7 +255,7 @@ def generate_calls(run: list, stops: list) -> list:
         stoptimes: list of scheduled stoptimes for this trip
     '''
     obs_distances = [p.distance for p in run]
-    obs_times = [p.timestamp for p in run]
+    obs_times = [p.time for p in run]
     stop_positions = [x.distance for x in stops]
     # The number of positions to use when extrapolating.
     e = 4
@@ -331,7 +331,7 @@ def track_vehicle(vehicle_id, calls_table, date, connectionstring, positions_tab
                     continue
                 elif len(run) <= 2:
                     logging.debug('short run (%d positions), v_id=%s, %s',
-                                  len(run), vehicle_id, run[0].timestamp)
+                                  len(run), vehicle_id, run[0].time)
                     continue
 
                 # Assume most common trip is the correct one.
