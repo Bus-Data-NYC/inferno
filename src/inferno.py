@@ -50,21 +50,26 @@ MIN_EXTRAP_DIST = 5
 #    |  |---- (start and end)
 #    +——+
 # ST_LineLocatePoint can't handle this, so we use the mostly-untrustworthy
-# "positions"."dist_along_route" column to limit the shape_geom LineString to
-# just the half of the line.
+# "positions"."dist_along_route" column to limit the part of the shape_geom
+# we examine to a fraction of the LineString.
 VEHICLE_QUERY = """
 SELECT
     EXTRACT(EPOCH FROM timestamp) AS time,
     trip_id,
     trip_start_date date,
     stop_sequence seq,
-    ROUND(length * careful_locate(the_geom, ST_SetSRID(ST_MakePoint(longitude, latitude), 4326),
-        (dist_along_route / length)::numeric, 0.2)::numeric, 2) AS distance
+    safe_locate(
+        r.the_geom,
+        ST_SetSRID(ST_MakePoint(longitude, latitude), 4326),
+        dist_along_route - length * 0.50,
+        greatest(dist_along_route, 0.1) + 5,
+        r.length
+    )::numeric(10, 2) AS distance
 FROM {0} p
     LEFT JOIN gtfs_trips USING (trip_id)
     -- TODO: change to LEFT JOIN when fix implemented for orphan stops
     INNER JOIN gtfs_stop_times st USING (feed_index, trip_id, stop_id)
-    LEFT JOIN gtfs_shape_geoms s USING (feed_index, shape_id)
+    LEFT JOIN gtfs_shape_geoms r USING (feed_index, shape_id)
 WHERE
     vehicle_id = %(vehicle)s
     AND trip_start_date = date %(date)s
