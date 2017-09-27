@@ -11,14 +11,15 @@ CREATE INDEX pos_vid_date ON rt_vehicle_positions (trip_start_date, vehicle_id);
 
 -- call time is a timestampz, will be passed into the db as a UTC datetime
 CREATE TABLE IF NOT EXISTS calls (
-  vehicle_id text not null,
-  call_time timestamp with time zone not null,
   trip_id text not null,
-  route_id text,
-  direction_id integer,
-  stop_id text,
-  source text,
   deviation interval,
+  call_time timestamp with time zone not null,
+  stop_id text,
+  vehicle_id text not null,
+  direction_id integer,
+  route_id text,
+  source text,
+  feed_index int,
   CONSTRAINT calls_pkey PRIMARY KEY (vehicle_id, call_time)
 );
 CREATE INDEX calls_rds_index ON calls (route_id, direction_id, stop_id);

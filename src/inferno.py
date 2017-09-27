@@ -81,6 +81,7 @@ SELECT_CALLED_VEHICLES = """SELECT vehicle_id FROM calls
     GROUP BY vehicle_id"""
 
 SELECT_STOPTIMES = """SELECT
+    feed_index,
     stop_id AS id,
     wall_time(date %(date)s, arrival_time, agency_timezone) AS datetime,
     route_id,
@@ -103,6 +104,7 @@ ORDER BY stop_sequence ASC
 """
 
 SELECT_STOPTIMES_PLAIN = """SELECT DISTINCT
+    feed_index,
     stop_id id,
     wall_time(date %(date)s, arrival_time, agency_timezone) AS datetime,
     route_id,
@@ -118,9 +120,9 @@ ORDER BY stop_sequence ASC;
 """
 
 INSERT = """INSERT INTO {}
-    (vehicle_id, trip_id, route_id, direction_id, stop_id, call_time, source, deviation)
-    VALUES (%(vehicle)s, %(trip)s, %(route_id)s, %(direction_id)s, %(stop_id)s, %(call_time)s, %(source)s, %(deviation)s)"""
-
+    (vehicle_id, trip_id, route_id, direction_id, stop_id, call_time, source, deviation, feed_index)
+    VALUES (%(vehicle)s, %(trip)s, %(route_id)s, %(direction_id)s, %(stop_id)s, %(call_time)s, %(source)s, %(deviation)s, %(feed_index)s)
+    ON CONFLICT DO NOTHING"""
 
 def common(lis: list):
     return Counter(lis).most_common(1)[0][0]
@@ -243,7 +245,8 @@ def call(stoptime, seconds, method=None):
         'stop_id': stoptime.id,
         'call_time': calltime,
         'deviation': calltime - stoptime.datetime,
-        'source': method or 'I'
+        'source': method or 'I',
+        'feed_index': stoptime.feed_index,
     }
 
 
