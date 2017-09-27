@@ -16,7 +16,7 @@ CONNECTION += host=$(PG_HOST)
 endif
 
 ifdef PG_PORT
-CONNECTION += port=$(PG_USER)
+CONNECTION += port=$(PG_PORT)
 endif
 
 ifdef PG_USER
@@ -24,7 +24,7 @@ CONNECTION += user=$(PG_USER)
 endif
 
 ifdef PG_PASSWORD
-CONNECTION += password=$(PG_USER)
+CONNECTION += password=$(PG_PASSWORD)
 endif
 
 CALLS = calls

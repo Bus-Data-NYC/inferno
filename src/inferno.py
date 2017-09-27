@@ -386,7 +386,7 @@ def main():
     else:
         with psycopg2.connect(args.connectionstring) as conn:
             with conn.cursor() as cursor:
-                logging.info('Finding vehicles')
+                logging.info('Finding vehicles for %s', args.date)
                 cursor.execute(SELECT_VEHICLE.format(args.positions_table), (args.date,))
                 vehicles = [x[0] for x in cursor.fetchall()]
 
