@@ -64,8 +64,10 @@ SELECT
     safe_locate(
         r.the_geom,
         ST_SetSRID(ST_MakePoint(longitude, latitude), 4326),
-        GREATEST(0, dist_along_route - dist_from_stop - 500),
-        GREATEST(dist_along_route, 0.1) + 100,
+        -- greatest lower-bound is 500m from end of route, lowest is 0, default is 500m before estimated position
+        LEAST(length - 500, GREATEST(0, dist_along_route - dist_from_stop - 500)),
+        -- greatest upper-bound is length, lowest is 100m from start, default is 100m past stop
+        LEAST(length, GREATEST(dist_along_route, 0) + 100),
         r.length
     )::numeric(10, 2) AS distance
 FROM {0} p
