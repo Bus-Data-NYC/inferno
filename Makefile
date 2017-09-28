@@ -2,11 +2,10 @@ shell = bash
 
 PYTHON = python3.5
 
-PSQLFLAGS =
-PG_HOST =
-PG_USER =
-PG_PASSWORD =
-PG_DATABASE = nycbus
+PSQLFLAGS ?=
+PG_HOST ?=
+PG_USER ?=
+PG_DATABASE ?= nycbus
 PSQL = psql $(DATABASE) $(PSQLFLAGS)
 
 CONNECTION = dbname=$(PG_DATABASE)
