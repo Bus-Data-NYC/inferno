@@ -61,8 +61,8 @@ SELECT
     safe_locate(
         r.the_geom,
         ST_SetSRID(ST_MakePoint(longitude, latitude), 4326),
-        dist_along_route - length * 0.50,
-        greatest(dist_along_route, 0.1) + 5,
+        GREATEST(0, dist_along_route - dist_from_stop - 500),
+        GREATEST(dist_along_route, 0.1) + 100,
         r.length
     )::numeric(10, 2) AS distance
 FROM {0} p
