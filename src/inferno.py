@@ -42,7 +42,10 @@ STOP_THRESHOLD = 30.48
 
 # Minimum distance between positions when extrapolating.
 # When zero, identical positions are allowed, which can produce crazy results
-MIN_EXTRAP_DIST = 5
+MIN_EXTRAP_DIST = 1
+
+# The number of positions to use when extrapolating.
+EXTRAPOLATION_LENGTH = 4
 
 # Doing one complicated thing in this query.
 # Some bus routes are loops with tails (e.g. B74):
@@ -133,16 +136,21 @@ def common(lis: list):
     return Counter(lis).most_common(1)[0][0]
 
 
-def mask(lis: list, key: Callable) -> list:
+def mask(lis: list, key: Callable, keep_last=None) -> list:
     '''
     Create a mask on `lis` using the `key` function.
     `key` will be evaluated on pairs of items in `lis`.
     Returned list will only include items where `key` evaluates to True.
+    Arguments:
+        keep_last (boolean): In a sequence of items where key() is False,
+                             keep the last one.
     '''
     result = [lis[0]]
     for item in lis[1:]:
         if key(item, result[-1]):
             result.append(item)
+        elif keep_last is True:
+            result[-1] = item
     return result
 
 
@@ -265,8 +273,6 @@ def generate_calls(run: list, stops: list) -> list:
     obs_distances = [p.distance for p in run]
     obs_times = [p.time for p in run]
     stop_positions = [x.distance for x in stops]
-    # The number of positions to use when extrapolating.
-    e = 4
 
     # Get the range of stop positions that can be interpolated based on data.
     # The rest will be extrapolated
@@ -280,13 +286,16 @@ def generate_calls(run: list, stops: list) -> list:
     interpolated = np.interp(stop_positions[si:ei], obs_distances, obs_times)
     calls = [call(stop, secs) for stop, secs in zip(stops[si:ei], interpolated)]
 
-    # Goal is to only extrapolate based on unique distances
-    masked = mask(run, lambda x, y: x.distance > y.distance + MIN_EXTRAP_DIST)
+    # Goal is to only extrapolate based on unique distances,
+    # When extrapolating forward, keep the oldest figure for a particular distance;
+    # when extrapolating back, keep the newest.
+    forward_mask = mask(run, lambda x, y: x.distance > y.distance + MIN_EXTRAP_DIST, keep_last=True)
+    back_mask = mask(run, lambda x, y: x.distance > y.distance + MIN_EXTRAP_DIST)
 
     # Extrapolate back for stops that occurred before observed positions.
-    if si > 0 and len(masked) > e:
+    if si > 0 and len(back_mask) > EXTRAPOLATION_LENGTH:
         try:
-            backward = extrapolate(masked[:e], stops[:si], 'S')
+            backward = extrapolate(back_mask[:EXTRAPOLATION_LENGTH], stops[:si], 'S')
             calls = backward + calls
         except Exception as error:
             logging.warning('%s. Ignoring back extrapolation', error)
@@ -294,9 +303,9 @@ def generate_calls(run: list, stops: list) -> list:
                             :si], [x.seq for x in stops[:si]], stop_positions[:si],)
 
     # Extrapolate forward to the stops after the observed positions.
-    if ei < len(stops) and len(masked) > e:
+    if ei < len(stops) and len(forward_mask) > EXTRAPOLATION_LENGTH:
         try:
-            forward = extrapolate(masked[-e:], stops[ei:], 'E')
+            forward = extrapolate(forward_mask[-EXTRAPOLATION_LENGTH:], stops[ei:], 'E')
             calls.extend(forward)
         except Exception as error:
             logging.warning('%s. Ignoring forward extrapolation', error)
