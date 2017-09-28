@@ -187,7 +187,7 @@ def samerun(a, b):
     ))
 
 
-def filter_positions(cursor, date, positions_table=None, vehicle=None):
+def get_positions(cursor, date, positions_table, vehicle):
     '''
     Compile list of positions for a vehicle, using a list of positions
     and filtering based on positions that reflect change in pattern or next_stop.
@@ -217,14 +217,16 @@ def filter_positions(cursor, date, positions_table=None, vehicle=None):
         prev = position
         position = cursor.fetchone()
 
-    # filter out any runs that start the next day
-    # mask runs to eliminate out-of-order stop sequences
-    runs = [mask(run, key=lambda a, b: compare_seq(a, b) and compare_dist(a, b)) for run in runs
+    return runs
+
+
+def filter_positions(runs):
+    '''Filter out positions from runs to eliminate out-of-order stop sequences.'''
+    return [mask(run, key=lambda a, b: compare_seq(a, b) and compare_dist(a, b))
+            for run in runs
             if len(run) > 2
             and len(set(r.seq for r in run)) > 1
             ]
-
-    return runs
 
 
 def get_stoptimes(cursor, tripid, date):
@@ -346,7 +348,9 @@ def track_vehicle(vehicle_id, calls_table, date, connectionstring, positions_tab
     with psycopg2.connect(connectionstring) as conn:
         logging.info('STARTING %s', vehicle_id)
         with conn.cursor(cursor_factory=NamedTupleCursor) as cursor:
-            runs = filter_positions(cursor, date, positions_table, vehicle_id)
+            runs = get_positions(cursor, date, positions_table, vehicle_id)
+            runs = filter_positions(runs)
+
             # Counter is just for logging.
             lenc = 0
 
