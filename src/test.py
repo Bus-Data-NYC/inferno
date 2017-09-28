@@ -14,10 +14,6 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
-def increasing(L):
-    return all(x <= y for x, y in zip(L, L[1:]))
-
-
 def monotonically_increasing(L):
     return all(x < y for x, y in zip(L, L[1:]))
 
@@ -101,7 +97,7 @@ class TestInferno(unittest.TestCase):
 
     def test_compare_dist(self):
         result = inferno.mask(self.sequence_data, inferno.compare_dist)
-        assert increasing([x.distance for x in result])
+        assert inferno.increasing([x.distance for x in result])
 
     def compare_seq(self):
         a, b = {'seq': 1}, {'seq': 2}
@@ -111,7 +107,18 @@ class TestInferno(unittest.TestCase):
         self.assertTrue(inferno.compare_seq(a, a))
 
         result = inferno.mask(self.sequence_data, inferno.compare_seq)
-        assert increasing([x['seq'] for x in result])
+        assert inferno.increasing([x['seq'] for x in result])
+
+    def test_increasing(self):
+        a = [1, 2, 3]
+        b = [1, 2, 2, 3]
+        c = [1, 2, 3, 2]
+        d = [1]
+
+        self.assertTrue(inferno.increasing(a))
+        self.assertTrue(inferno.increasing(b))
+        self.assertFalse(inferno.increasing(c))
+        self.assertTrue(inferno.increasing(d))
 
     def test_desc2fn(self):
         nt = namedtuple('a', ['name'])
@@ -153,7 +160,7 @@ class TestInferno(unittest.TestCase):
 
             # increasing distance
             try:
-                self.assertTrue(increasing([r.distance for r in run]), 'increasing distance')
+                self.assertTrue(inferno.increasing([r.distance for r in run]), 'increasing distance')
             except AssertionError:
                 errs = [(i, datetime.fromtimestamp(r.timestamp).strftime('%c'), r.distance)
                         for i, r in enumerate(run, 1)]

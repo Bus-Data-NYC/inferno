@@ -299,7 +299,10 @@ def generate_calls(run: list, stops: list) -> list:
         logging.debug('extrapolating backward. si = %s', si)
         try:
             backward = extrapolate(back_mask, stops[:si], 'S')
+            assert increasing([x['call_time'] for x in backward])
+            assert backward[-1]['call_time'] < calls[0]['call_time']
             calls = backward + calls
+
         except Exception as error:
             logging.warning('%s. Ignoring back extrapolation', error)
             logging.warning('    positions %s, sequence: %s, stops: %s', stop_positions[
@@ -310,16 +313,13 @@ def generate_calls(run: list, stops: list) -> list:
         logging.debug('extrapolating forward. ei = %s', ei)
         try:
             forward = extrapolate(forward_mask, stops[ei:], 'E')
+            assert increasing([x['call_time'] for x in forward])
+            assert forward[0]['call_time'] > calls[-1]['call_time']
             calls.extend(forward)
+
         except Exception as error:
             logging.warning('%s. Ignoring forward extrapolation', error)
             logging.warning('positions %s, sequence: %s', stop_positions[ei:], [x.seq for x in stops[ei:]])
-
-    try:
-        assert not decreasing([x['call_time'] for x in calls])
-    except AssertionError:
-        logging.error('decreasing calls. trip %s', run[0].trip_id)
-        return []
 
     try:
         assert increasing([x['call_time'] for x in calls])
@@ -335,10 +335,6 @@ def generate_calls(run: list, stops: list) -> list:
 
 def increasing(L):
     return all(x <= y for x, y in zip(L, L[1:]))
-
-
-def decreasing(L):
-    return all(x > y for x, y in zip(L, L[1:]))
 
 
 def track_vehicle(vehicle_id, calls_table, date, connectionstring, positions_table=None):
@@ -379,6 +375,7 @@ def track_vehicle(vehicle_id, calls_table, date, connectionstring, positions_tab
                     INSERT.format(calls_table),
                     [dict(trip=trip_id, vehicle=vehicle_id, **c) for c in calls]
                 )
+
                 lenc += len(calls)
                 conn.commit()
                 logging.debug('%s', cursor.statusmessage)
