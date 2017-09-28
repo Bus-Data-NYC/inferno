@@ -45,7 +45,7 @@ STOP_THRESHOLD = 30.48
 MIN_EXTRAP_DIST = 1
 
 # The number of positions to use when extrapolating.
-EXTRAPOLATION_LENGTH = 4
+EXTRAP_LENGTH = 4
 
 # Doing one complicated thing in this query.
 # Some bus routes are loops with tails (e.g. B74):
@@ -134,6 +134,7 @@ INSERT = """INSERT INTO {}
     VALUES (%(vehicle)s, %(trip)s, %(route_id)s, %(direction_id)s, %(stop_id)s, %(call_time)s, %(source)s, %(deviation)s, %(feed_index)s)
     ON CONFLICT DO NOTHING"""
 
+
 def common(lis: list):
     return Counter(lis).most_common(1)[0][0]
 
@@ -179,12 +180,9 @@ def compare_dist(a, b):
 
 def samerun(a, b):
     '''Check if two positions belong to the same run'''
-    return all((
-        # Trip is the same.
-        getattr(a, 'trip_id', None) == b.trip_id,
-        # Sequence is the same or higher.
-        getattr(a, 'seq', 0) <= b.seq,
-    ))
+    # Trip is the same.
+    # Sequence is the same or higher.
+    return getattr(a, 'trip_id', None) == b.trip_id and getattr(a, 'seq', 0) <= b.seq
 
 
 def get_positions(cursor, date, positions_table, vehicle):
@@ -293,11 +291,11 @@ def generate_calls(run: list, stops: list) -> list:
     # Goal is to only extrapolate based on unique distances,
     # When extrapolating forward, keep the oldest figure for a particular distance;
     # when extrapolating back, keep the newest.
-    back_mask = mask(run, lambda x, y: x.distance > y.distance + MIN_EXTRAP_DIST)[:EXTRAPOLATION_LENGTH]
-    forward_mask = mask(run, lambda x, y: x.distance > y.distance + MIN_EXTRAP_DIST, keep_last=True)[-EXTRAPOLATION_LENGTH:]
+    back_mask = mask(run, lambda x, y: x.distance > y.distance + MIN_EXTRAP_DIST)[:EXTRAP_LENGTH]
+    forward_mask = mask(run, lambda x, y: x.distance > y.distance + MIN_EXTRAP_DIST, keep_last=True)[-EXTRAP_LENGTH:]
 
     # Extrapolate back for stops that occurred before observed positions.
-    if si > 0 and len(back_mask) == EXTRAPOLATION_LENGTH:
+    if si > 0 and len(back_mask) == EXTRAP_LENGTH:
         logging.debug('extrapolating backward. si = %s', si)
         try:
             backward = extrapolate(back_mask, stops[:si], 'S')
@@ -308,7 +306,7 @@ def generate_calls(run: list, stops: list) -> list:
                             :si], [x.seq for x in stops[:si]], stop_positions[:si],)
 
     # Extrapolate forward to the stops after the observed positions.
-    if ei < len(stops) and len(forward_mask) == EXTRAPOLATION_LENGTH:
+    if ei < len(stops) and len(forward_mask) == EXTRAP_LENGTH:
         logging.debug('extrapolating forward. ei = %s', ei)
         try:
             forward = extrapolate(forward_mask, stops[ei:], 'E')
