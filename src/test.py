@@ -46,9 +46,9 @@ class TestInferno(unittest.TestCase):
     def test_calls(self):
         '''call generator'''
         with self._connection.cursor(cursor_factory=NamedTupleCursor) as cursor:
-            runs = inferno.filter_positions(cursor, self.service_date, vehicle=self.vehicle_id)
+            runs = inferno.get_positions(cursor, self.service_date, 'positions', self.vehicle_id)
 
-            for run in runs:
+            for run in inferno.filter_positions(runs):
                 trip = inferno.common([x.trip_id for x in run])
 
                 stoptimes = inferno.get_stoptimes(cursor, trip, self.service_date)
@@ -162,26 +162,27 @@ class TestInferno(unittest.TestCase):
             try:
                 self.assertTrue(inferno.increasing([r.distance for r in run]), 'increasing distance')
             except AssertionError:
-                errs = [(i, datetime.fromtimestamp(r.timestamp).strftime('%c'), r.distance)
+                errs = [(i, datetime.fromtimestamp(r.time).strftime('%c'), r.distance)
                         for i, r in enumerate(run, 1)]
                 raise AssertionError(errs)
 
-    def test_filter_positions(self):
+    def test_get_positions(self):
         with self._connection.cursor() as cursor:
             # Check that imaginary vehicle returns nothing
-            runs = inferno.filter_positions(cursor, self.service_date, vehicle='magic schoolbus')
+            runs = inferno.get_positions(cursor, self.service_date, 'positions', 'magic schoolbus')
             self.assertEqual(len(runs), 0)
 
-            runs = inferno.filter_positions(cursor, self.service_date, vehicle=self.vehicle_id)
-            runs2 = inferno.filter_positions(cursor, self.service_date, vehicle='7149')
+            runs = inferno.get_positions(cursor, self.service_date, 'positions', self.vehicle_id)
+            self.assertIsInstance(runs, list)
 
-        self.assertIsInstance(runs, list)
+            runs2 = inferno.get_positions(cursor, self.service_date, 'positions', '7149')
+
         try:
-            self._run_tst(runs)
+            self._run_tst(inferno.filter_positions(runs))
         except AssertionError:
             raise AssertionError('Run test failed for', self.service_date, self.vehicle_id)
         try:
-            self._run_tst(runs2)
+            self._run_tst(inferno.filter_positions(runs))
         except AssertionError:
             raise AssertionError('Run test failed for', self.service_date, '7149')
 
@@ -189,9 +190,9 @@ class TestInferno(unittest.TestCase):
         inferno.track_vehicle(self.vehicle_id, 'calls', self.service_date, self.connstr)
 
     def test_call(self):
-        StopTime = namedtuple('stoptime', ('datetime', 'id', 'route_id', 'direction_id'))
+        StopTime = namedtuple('stoptime', ('feed_index', 'datetime', 'id', 'route_id', 'direction_id'))
 
-        stoptime = StopTime(datetime(2017, 5, 30, 23, 46, 15, tzinfo=utc), 'abc', 'lorem ipsum', 0)
+        stoptime = StopTime(1, datetime(2017, 5, 30, 23, 46, 15, tzinfo=utc), 'abc', 'lorem ipsum', 0)
         seconds = 1496188035
         dt = datetime(2017, 5, 30, 23, 47, 15, tzinfo=utc)
         fixture = {
@@ -199,6 +200,7 @@ class TestInferno(unittest.TestCase):
             'direction_id': stoptime.direction_id,
             'stop_id': stoptime.id,
             'call_time': dt,
+            'feed_index': 1,
             'deviation': dt - stoptime.datetime,
             'source': 'I'
         }
@@ -247,18 +249,18 @@ class TestInferno(unittest.TestCase):
                 raise AssertionError('No result for query')
 
             for row in cursor.fetchall():
-                assert isinstance(row[1], datetime)
-                assert isinstance(row[5], float)
+                assert isinstance(row[0], int)
+                assert isinstance(row[2], datetime)
+                assert isinstance(row[6], float)
 
-        with self._connection.cursor() as cursor:
             cursor.execute(inferno.SELECT_STOPTIMES_PLAIN, data)
             if cursor.rowcount == 0:
                 print(cursor.query.decode('utf8'))
                 raise AssertionError('No result for query')
 
             for row in cursor.fetchall():
-                assert isinstance(row[1], datetime)
-                assert isinstance(row[5], float)
+                assert isinstance(row[2], datetime)
+                assert isinstance(row[6], float)
 
 if __name__ == '__main__':
     unittest.main()

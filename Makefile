@@ -47,6 +47,7 @@ test: | clean-test load-test
 	$(PYTHON) -m coverage run src/test.py -q
 
 load-test:
+	psql inferno -f sql/calls.sql
 	psql inferno -f src/test_data/positions.sql
 	psql inferno -f src/test_data/trips.sql
 	psql inferno -f src/test_data/shape_geoms.sql

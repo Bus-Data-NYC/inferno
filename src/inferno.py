@@ -383,7 +383,7 @@ def track_vehicle(vehicle_id, calls_table, date, connectionstring, positions_tab
             logging.info('COMMIT vehicle= %s, calls= %s', vehicle_id, lenc)
 
 
-def main():
+def main():  # pragma: no cover
     # connectionstring: str, table, date, vehicle=None
     parser = argparse.ArgumentParser()
     parser.add_argument('connectionstring', type=str)

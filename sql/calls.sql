@@ -9,6 +9,20 @@ CREATE INDEX pos_vid ON rt_vehicle_positions (vehicle_id);
 CREATE INDEX pos_trip_id ON rt_vehicle_positions (trip_id);
 CREATE INDEX pos_vid_date ON rt_vehicle_positions (trip_start_date, vehicle_id);
 
+CREATE OR REPLACE FUNCTION safe_locate
+  (route geometry, point geometry, start numeric, finish numeric, length numeric)
+  RETURNS numeric AS $$
+    -- Multiply the fractional distance also the substring by the substring,
+    -- then add the start distance
+    SELECT GREATEST(0, start) + ST_LineLocatePoint(
+      ST_LineSubstring(route, GREATEST(0, start / length), LEAST(1, finish / length)),
+      point
+    )::numeric * (
+      -- The absolute distance between start and finish
+      LEAST(length, finish) - GREATEST(0, start)
+    );
+  $$ LANGUAGE SQL;
+
 -- call time is a timestampz, will be passed into the db as a UTC datetime
 CREATE TABLE IF NOT EXISTS calls (
   trip_id text not null,
