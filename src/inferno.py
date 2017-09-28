@@ -289,14 +289,14 @@ def generate_calls(run: list, stops: list) -> list:
     # Goal is to only extrapolate based on unique distances,
     # When extrapolating forward, keep the oldest figure for a particular distance;
     # when extrapolating back, keep the newest.
-    forward_mask = mask(run, lambda x, y: x.distance > y.distance + MIN_EXTRAP_DIST, keep_last=True)
-    back_mask = mask(run, lambda x, y: x.distance > y.distance + MIN_EXTRAP_DIST)
+    back_mask = mask(run, lambda x, y: x.distance > y.distance + MIN_EXTRAP_DIST)[:EXTRAPOLATION_LENGTH]
+    forward_mask = mask(run, lambda x, y: x.distance > y.distance + MIN_EXTRAP_DIST, keep_last=True)[-EXTRAPOLATION_LENGTH:]
 
     # Extrapolate back for stops that occurred before observed positions.
-    if si > 0 and len(back_mask) > EXTRAPOLATION_LENGTH:
+    if si > 0 and len(back_mask) == EXTRAPOLATION_LENGTH:
         logging.debug('extrapolating backward. si = %s', si)
         try:
-            backward = extrapolate(back_mask[:EXTRAPOLATION_LENGTH], stops[:si], 'S')
+            backward = extrapolate(back_mask, stops[:si], 'S')
             calls = backward + calls
         except Exception as error:
             logging.warning('%s. Ignoring back extrapolation', error)
@@ -304,10 +304,10 @@ def generate_calls(run: list, stops: list) -> list:
                             :si], [x.seq for x in stops[:si]], stop_positions[:si],)
 
     # Extrapolate forward to the stops after the observed positions.
-    if ei < len(stops) and len(forward_mask) > EXTRAPOLATION_LENGTH:
+    if ei < len(stops) and len(forward_mask) == EXTRAPOLATION_LENGTH:
         logging.debug('extrapolating forward. ei = %s', ei)
         try:
-            forward = extrapolate(forward_mask[-EXTRAPOLATION_LENGTH:], stops[ei:], 'E')
+            forward = extrapolate(forward_mask, stops[ei:], 'E')
             calls.extend(forward)
         except Exception as error:
             logging.warning('%s. Ignoring forward extrapolation', error)
