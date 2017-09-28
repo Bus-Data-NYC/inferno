@@ -294,6 +294,7 @@ def generate_calls(run: list, stops: list) -> list:
 
     # Extrapolate back for stops that occurred before observed positions.
     if si > 0 and len(back_mask) > EXTRAPOLATION_LENGTH:
+        logging.debug('extrapolating backward. si = %s', si)
         try:
             backward = extrapolate(back_mask[:EXTRAPOLATION_LENGTH], stops[:si], 'S')
             calls = backward + calls
@@ -304,6 +305,7 @@ def generate_calls(run: list, stops: list) -> list:
 
     # Extrapolate forward to the stops after the observed positions.
     if ei < len(stops) and len(forward_mask) > EXTRAPOLATION_LENGTH:
+        logging.debug('extrapolating forward. ei = %s', ei)
         try:
             forward = extrapolate(forward_mask[-EXTRAPOLATION_LENGTH:], stops[ei:], 'E')
             calls.extend(forward)
@@ -321,6 +323,10 @@ def generate_calls(run: list, stops: list) -> list:
         assert increasing([x['call_time'] for x in calls])
     except AssertionError:
         logging.info('non-increasing calls. trip %s', run[0].trip_id)
+        logging.debug("calc'ed call times: %s", [x['call_time'].timestamp() for x in calls])
+        logging.debug('observed positions: %s', obs_distances)
+        logging.debug('observed times: %s', obs_times)
+        logging.debug('stop positions: %s', stop_positions)
 
     return calls
 
@@ -371,8 +377,9 @@ def track_vehicle(vehicle_id, calls_table, date, connectionstring, positions_tab
                 )
                 lenc += len(calls)
                 conn.commit()
+                logging.debug('%s', cursor.statusmessage)
 
-            logging.info('COMMIT %s (%s calls)', vehicle_id, lenc)
+            logging.info('COMMIT vehicle= %s, calls= %s', vehicle_id, lenc)
 
 
 def main():
@@ -417,6 +424,7 @@ def main():
 
     if args.debug:
         logging.info("debug mode")
+        logger.setLevel(logging.DEBUG)
         for i in itervehicles:
             track_vehicle(*i)
     else:
