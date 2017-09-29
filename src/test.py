@@ -25,7 +25,8 @@ class TestInferno(unittest.TestCase):
     vehicle_id = '8500'
     service_date = '2017-05-20'
 
-    Position = namedtuple('position', ['seq', 'distance', 'trip_id'])
+    Position = namedtuple('position', ['seq', 'distance', 'trip_id', 'time'])
+    StopTime = namedtuple('stoptime', ['feed_index', 'id', 'datetime', 'route_id', 'direction_id', 'seq', 'distance'])
 
     @classmethod
     def setUpClass(cls):
@@ -35,9 +36,9 @@ class TestInferno(unittest.TestCase):
             print('TRUNCATE TABLE calls')
             c.execute('TRUNCATE TABLE calls')
 
-        cls.sequence_data = [cls.Position(x[0], x[1], 'x') for x in [
-            (25, 6515.72), (26, 6763.42), (27, 6856.14), (28, 6848.21),
-            (29, 6848.21), (31, 6848.21), (30, 6848.21)]]
+        cls.sequence_data = [cls.Position(x[0], x[1], 'x', x[2]) for x in [
+            (25, 6515.72, 100), (26, 6763.42, 110), (27, 6856.14, 120), (28, 6848.21, 130),
+            (29, 6848.21, 140), (31, 6848.21, 150), (30, 6848.21, 160)]]
 
     @classmethod
     def tearDownClass(cls):
@@ -85,10 +86,10 @@ class TestInferno(unittest.TestCase):
             return bool(a and b)
         self.assertSequenceEqual([1, 2, 3], inferno.mask(a, key))
 
-        obj = [self.Position(x, x, '.') for x in (1, 2, 3)]
+        obj = [self.Position(x, x, '.', x) for x in (1, 2, 3)]
         self.assertSequenceEqual(obj, inferno.mask(obj, inferno.compare_seq))
 
-        wrong = [self.Position(x, x, '.') for x in (1, 2, 0, 3)]
+        wrong = [self.Position(x, x, '.', x) for x in (1, 2, 0, 3)]
         self.assertSequenceEqual(obj, inferno.mask(wrong, inferno.compare_seq))
 
         lis = [1, 2, 3, 2, 2, 2, 4, 5]
@@ -126,10 +127,10 @@ class TestInferno(unittest.TestCase):
         self.assertSequenceEqual(('foo', 'bar'), inferno.desc2fn(a))
 
     def test_samerun(self):
-        a = self.Position(1, 1, 'x')
-        b = self.Position(2, 2, 'x')
-        c = self.Position(2, 3, 'z')
-        d = self.Position(0, 4, 'x')
+        a = self.Position(1, 1, 'x', 1)
+        b = self.Position(2, 2, 'x', 2)
+        c = self.Position(2, 3, 'z', 3)
+        d = self.Position(0, 4, 'x', 4)
 
         self.assertTrue(inferno.samerun(a, b))
         self.assertFalse(inferno.samerun(a, c))
@@ -190,18 +191,19 @@ class TestInferno(unittest.TestCase):
         inferno.track_vehicle(self.vehicle_id, 'calls', self.service_date, self.connstr)
 
     def test_call(self):
-        StopTime = namedtuple('stoptime', ('feed_index', 'datetime', 'id', 'route_id', 'direction_id'))
+        dt1 = datetime(2017, 5, 30, 23, 46, 15, tzinfo=utc)
+        stoptime = self.StopTime(1, 'id', dt1, 'route', 1, 1, 1)
 
-        stoptime = StopTime(1, datetime(2017, 5, 30, 23, 46, 15, tzinfo=utc), 'abc', 'lorem ipsum', 0)
         seconds = 1496188035
-        dt = datetime(2017, 5, 30, 23, 47, 15, tzinfo=utc)
+        dt2 = datetime(2017, 5, 30, 23, 47, 15, tzinfo=utc)
+
         fixture = {
             'route_id': stoptime.route_id,
             'direction_id': stoptime.direction_id,
             'stop_id': stoptime.id,
-            'call_time': dt,
-            'feed_index': 1,
-            'deviation': dt - stoptime.datetime,
+            'call_time': dt2,
+            'feed_index': stoptime.feed_index,
+            'deviation': dt2 - stoptime.datetime,
             'source': 'I'
         }
         c1 = inferno.call(stoptime, seconds)
@@ -261,6 +263,40 @@ class TestInferno(unittest.TestCase):
             for row in cursor.fetchall():
                 assert isinstance(row[2], datetime)
                 assert isinstance(row[6], float)
+
+    def test_extrapolate(self):
+        with self.assertRaises(ValueError):
+            inferno.extrapolate([], [], 'X')
+
+        with self.assertRaises(IndexError):
+            inferno.extrapolate([], [], 'E')
+
+        # Test extrapolation on bowl-shaped data
+        # Based on real data that caused problem in old extrapolator.
+        ydata = (100, 125, 200, 400)
+        dt2 = datetime(2017, 5, 30, 23, 47, 15, tzinfo=utc)
+
+        stoptimes = [self.StopTime(None, None, dt2, None, None, None, a) for a in range(5, 7)]
+        run = [self.Position(None, a, None, b) for a, b in enumerate(ydata, start=1)]
+
+        calls = inferno.extrapolate(run, stoptimes, 'E')
+        assert len(calls) == 2
+        a = calls[0]['call_time'].timestamp()
+        b = calls[1]['call_time'].timestamp()
+        self.assertGreater(a, ydata[-1])
+        self.assertGreater(b, ydata[-1])
+        self.assertGreater(b, a)
+        self.assertEqual(a, 450)
+        self.assertEqual(b, 547.5)
+
+        # Too-short input gets empty response
+        self.assertSequenceEqual(inferno.extrapolate([run[0]], stoptimes, 'E'), [])
+
+        # backward input gets empty response
+        bad = [100, 90]
+        badrun = [self.Position(None, a, None, b) for a, b in enumerate(bad, start=1)]
+        self.assertSequenceEqual(inferno.extrapolate(badrun, stoptimes, 'E'), [])
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -45,7 +45,7 @@ STOP_THRESHOLD = 30.48
 MIN_EXTRAP_DIST = 1
 
 # The number of positions to use when extrapolating.
-EXTRAP_LENGTH = 4
+EXTRAP_LENGTH = 5
 
 # Doing one complicated thing in this query.
 # Some bus routes are loops with tails (e.g. B74):
@@ -241,10 +241,53 @@ def get_stoptimes(cursor, tripid, date):
 
 
 def extrapolate(run, stoptimes, method=None):
-    x = [a.distance for a in run]
-    y = [a.time for a in run]
-    coefficients = np.polyfit(x, y, 1)
-    result = np.poly1d(coefficients)([x.distance for x in stoptimes])
+    '''
+        Extrapolating is hard. Depending on the input data points, extrapolated
+        data could produce impossible results, e.g. an extrapoled time being less
+        than a known time. This is true even for linear extrapolations.
+        This function may run multiple extrapolations, counterintuitively using less
+        data until a reasonable result is obtained. In the extreme, a linear extrapolation
+        from two observations will always provide a plausible (if rough) estimate.
+    '''
+    xs = [x.distance for x in run]
+    ys = [x.time for x in run]
+    data = [x.distance for x in stoptimes]
+    result = []
+
+    # Use builtin comparison functions.
+    # Operations are symmetric when extrapolating forward vs. backward.
+    if method == 'E':
+        # Extrapolate forward (to End).
+        compare = ys[-1].__lt__
+
+    elif method == 'S':
+        # Extrapolate backward (to Start).
+        compare = ys[0].__gt__
+
+    else:
+        raise ValueError("Invalid direction")
+
+    # Try to ensure that the extrapolated values are consistent with
+    # the previous values by using shorter versions of the run when necessary
+    while len(ys) > 1:
+        slope, intercept = np.polyfit(xs, ys, 1)
+        result = [slope * x + intercept for x in data]
+
+        if slope > 0 and all(compare(y) for y in result):
+            # Got a legal extrapolation, return calls.
+            # Slope should always be > 0, if it isn't there's a serious data issue.
+            break
+
+        else:
+            result = []
+            # Slice from the beginning (if forward) or end (if backward)
+            # of the run.
+            logging.debug('Invalid extrap. method: %s. comparison: %s',
+                          method, [round(ys[0 if method == 'E' else -1] - y, 1) for y in result])
+            logging.debug('new extrap length: %s', len(xs) - 1)
+            xs.pop(0 if method == 'E' else -1)
+            ys.pop(0 if method == 'E' else -1)
+
     return [call(s, t, method) for s, t in zip(stoptimes, result)]
 
 
@@ -295,39 +338,29 @@ def generate_calls(run: list, stops: list) -> list:
     forward_mask = mask(run, lambda x, y: x.distance > y.distance + MIN_EXTRAP_DIST, keep_last=True)[-EXTRAP_LENGTH:]
 
     # Extrapolate back for stops that occurred before observed positions.
-    if si > 0 and len(back_mask) == EXTRAP_LENGTH:
+    if si > 0 and len(back_mask) > 1:
         logging.debug('extrapolating backward. si = %s', si)
         try:
             backward = extrapolate(back_mask, stops[:si], 'S')
-            assert increasing([x['call_time'] for x in backward])
-            assert backward[-1]['call_time'] < calls[0]['call_time']
             calls = backward + calls
 
         except Exception as error:
-            logging.warning('Ignoring back extrapolation: %s', error)
-            logging.warning('    trip: %s, positions: %s, mask: %s', run[0].trip_id,
-                            stop_positions[:si], [(x.distance, x.time) for x in back_mask]
-                            )
+            logging.warning('%s -- Ignoring back extrapolation: %s ', run[0].trip_id, error)
 
     # Extrapolate forward to the stops after the observed positions.
-    if ei < len(stops) and len(forward_mask) == EXTRAP_LENGTH:
+    if ei < len(stops) and len(forward_mask) > 1:
         logging.debug('extrapolating forward. ei = %s', ei)
         try:
             forward = extrapolate(forward_mask, stops[ei:], 'E')
-            assert increasing([x['call_time'] for x in forward])
-            assert forward[0]['call_time'] > calls[-1]['call_time']
             calls.extend(forward)
 
         except Exception as error:
-            logging.warning('Ignoring forward extrapolation: %s', error)
-            logging.warning('    trip: %s, positions: %s, mask: %s', run[0].trip_id,
-                            stop_positions[ei:], [(x.distance, x.time) for x in forward_mask]
-                            )
+            logging.warning('%s -- Ignoring forward extrapolation: %s', run[0].trip_id, error)
 
     try:
         assert increasing([x['call_time'] for x in calls])
     except AssertionError:
-        logging.info('non-increasing calls. trip %s', run[0].trip_id)
+        logging.info('%s -- non-increasing calls', run[0].trip_id)
         logging.debug("calc'ed call times: %s", [x['call_time'].timestamp() for x in calls])
         logging.debug('observed positions: %s', obs_distances)
         logging.debug('observed times: %s', obs_times)
