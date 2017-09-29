@@ -304,9 +304,10 @@ def generate_calls(run: list, stops: list) -> list:
             calls = backward + calls
 
         except Exception as error:
-            logging.warning('%s. Ignoring back extrapolation', error)
-            logging.warning('    positions %s, sequence: %s, stops: %s', stop_positions[
-                            :si], [x.seq for x in stops[:si]], stop_positions[:si],)
+            logging.warning('Ignoring back extrapolation: %s', error)
+            logging.warning('    trip: %s, positions: %s, mask: %s', run[0].trip_id,
+                            stop_positions[:si], [(x.distance, x.time) for x in back_mask]
+                            )
 
     # Extrapolate forward to the stops after the observed positions.
     if ei < len(stops) and len(forward_mask) == EXTRAP_LENGTH:
@@ -318,8 +319,10 @@ def generate_calls(run: list, stops: list) -> list:
             calls.extend(forward)
 
         except Exception as error:
-            logging.warning('%s. Ignoring forward extrapolation', error)
-            logging.warning('positions %s, sequence: %s', stop_positions[ei:], [x.seq for x in stops[ei:]])
+            logging.warning('Ignoring forward extrapolation: %s', error)
+            logging.warning('    trip: %s, positions: %s, mask: %s', run[0].trip_id,
+                            stop_positions[ei:], [(x.distance, x.time) for x in forward_mask]
+                            )
 
     try:
         assert increasing([x['call_time'] for x in calls])
