@@ -3,23 +3,24 @@ shell = bash
 PYTHON = python3.5
 
 PSQLFLAGS ?=
-PG_HOST ?=
-PG_USER ?=
 PG_DATABASE ?= nycbus
-PSQL = psql $(DATABASE) $(PSQLFLAGS)
 
 CONNECTION = dbname=$(PG_DATABASE)
+PSQL = psql $(PG_DATABASE) $(PSQLFLAGS)
 
 ifdef PG_HOST
 CONNECTION += host=$(PG_HOST)
+PSQLFLAGS += -h $(PG_HOST)
 endif
 
 ifdef PG_PORT
 CONNECTION += port=$(PG_PORT)
+PSQLFLAGS += -p $(PG_POST)
 endif
 
 ifdef PG_USER
 CONNECTION += user=$(PG_USER)
+PSQLFLAGS += -U $(PG_USER)
 endif
 
 ifdef PG_PASSWORD
@@ -54,7 +55,7 @@ load-test:
 	psql inferno -f src/test_data/stop_times.sql
 
 clean-test:
-	psql inferno -c "truncate calls, positions, gtfs_trips, gtfs_stop_times, \
+	-psql inferno -c "truncate calls, rt_vehicle_positions, gtfs_trips, gtfs_stop_times, \
 		gtfs_calendar, gtfs_feed_info, gtfs_agency, gtfs_shape_geoms cascade;"
 
 init:
