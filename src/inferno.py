@@ -93,7 +93,8 @@ SELECT_CALLED_VEHICLES = """SELECT vehicle_id FROM calls
 SELECT_STOPTIMES = """SELECT
     feed_index,
     stop_id AS id,
-    wall_time(date %(date)s, arrival_time, agency_timezone) AS datetime,
+    wall_timez(DATE %(date)s, arrival_time, agency_timezone) AS datetime,
+    DATE %(date)s as trip_start_date,
     route_id,
     direction_id,
     stop_sequence AS seq,
@@ -116,7 +117,8 @@ ORDER BY stop_sequence ASC
 SELECT_STOPTIMES_PLAIN = """SELECT DISTINCT
     feed_index,
     stop_id id,
-    wall_time(date %(date)s, arrival_time, agency_timezone) AS datetime,
+    wall_timez(date %(date)s, arrival_time, agency_timezone) AS datetime,
+    date %(date)s as trip_start_date,
     route_id,
     direction_id,
     stop_sequence AS seq,
@@ -130,8 +132,10 @@ ORDER BY stop_sequence ASC;
 """
 
 INSERT = """INSERT INTO {}
-    (vehicle_id, trip_id, route_id, direction_id, stop_id, call_time, source, deviation, feed_index)
-    VALUES (%(vehicle)s, %(trip)s, %(route_id)s, %(direction_id)s, %(stop_id)s, %(call_time)s, %(source)s, %(deviation)s, %(feed_index)s)
+    (vehicle_id, trip_id, route_id, direction_id, stop_id,
+        call_time, source, deviation, feed_index, trip_start_date)
+    VALUES (%(vehicle)s, %(trip)s, %(route_id)s, %(direction_id)s, %(stop_id)s,
+        %(call_time)s, %(source)s, %(deviation)s, %(feed_index)s, %(date)s)
     ON CONFLICT DO NOTHING"""
 
 
@@ -234,7 +238,7 @@ def get_stoptimes(cursor, tripid, date):
 
     if cursor.rowcount == 0:
         logging.warning("Couldn't find any stoptimes in date range, running simple query: %s", tripid)
-        logging.warning(cursor.query.decode('utf8'))
+        logging.debug(cursor.query.decode('utf8'))
         cursor.execute(SELECT_STOPTIMES_PLAIN, fields)
 
     return cursor.fetchall()
@@ -301,6 +305,7 @@ def call(stoptime, seconds, method=None):
         'route_id': stoptime.route_id,
         'direction_id': stoptime.direction_id,
         'stop_id': stoptime.id,
+        'trip_start_date': stoptime.trip_start_date,
         'call_time': calltime,
         'deviation': calltime - stoptime.datetime,
         'source': method or 'I',
