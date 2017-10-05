@@ -26,7 +26,7 @@ class TestInferno(unittest.TestCase):
     service_date = '2017-05-20'
 
     Position = namedtuple('position', ['seq', 'distance', 'trip_id', 'time'])
-    StopTime = namedtuple('stoptime', ['feed_index', 'id', 'datetime', 'route_id', 'direction_id', 'seq', 'distance'])
+    StopTime = namedtuple('stoptime', ['feed_index', 'id', 'datetime', 'route_id', 'direction_id', 'seq', 'distance', 'trip_start_date'])
 
     @classmethod
     def setUpClass(cls):
@@ -192,7 +192,7 @@ class TestInferno(unittest.TestCase):
 
     def test_call(self):
         dt1 = datetime(2017, 5, 30, 23, 46, 15, tzinfo=utc)
-        stoptime = self.StopTime(1, 'id', dt1, 'route', 1, 1, 1)
+        stoptime = self.StopTime(1, 'id', dt1, 'route', 1, 1, 1, '2017-05-01')
 
         seconds = 1496188035
         dt2 = datetime(2017, 5, 30, 23, 47, 15, tzinfo=utc)
@@ -204,7 +204,8 @@ class TestInferno(unittest.TestCase):
             'call_time': dt2,
             'feed_index': stoptime.feed_index,
             'deviation': dt2 - stoptime.datetime,
-            'source': 'I'
+            'source': 'I',
+            'trip_start_date': '2017-05-01'
         }
         c1 = inferno.call(stoptime, seconds)
         self.assertEqual(c1, fixture)
@@ -230,9 +231,9 @@ class TestInferno(unittest.TestCase):
         '''Test the wall_time postgressql function'''
         with self._connection.cursor() as cursor:
             cursor.execute("""SELECT
-                wall_time('2017-03-10'::date, %(time)s::interval, 'America/New_York'::text) a,
-                wall_time('2017-03-11'::date, %(time)s::interval, 'America/New_York'::text) b,
-                wall_time('2017-03-12'::date, %(time)s::interval, 'America/New_York'::text) c
+                wall_timez('2017-03-10'::date, %(time)s::interval, 'America/New_York'::text) a,
+                wall_timez('2017-03-11'::date, %(time)s::interval, 'America/New_York'::text) b,
+                wall_timez('2017-03-12'::date, %(time)s::interval, 'America/New_York'::text) c
             """, {'time': '27:00:00'}
             )
             r = cursor.fetchone()
@@ -244,16 +245,18 @@ class TestInferno(unittest.TestCase):
     def test_queries(self):
         data = {'trip': 'QV_B7-Weekday-SDon-145500_MISC_320', 'date': '2017-05-20'}
 
-        with self._connection.cursor() as cursor:
+        with self._connection.cursor(cursor_factory=NamedTupleCursor) as cursor:
             cursor.execute(inferno.SELECT_STOPTIMES, data)
             if cursor.rowcount == 0:
                 print(cursor.query.decode('utf8'))
                 raise AssertionError('No result for query')
 
             for row in cursor.fetchall():
-                assert isinstance(row[0], int)
-                assert isinstance(row[2], datetime)
-                assert isinstance(row[6], float)
+                assert isinstance(row.feed_index, int)
+                assert isinstance(row.datetime, datetime)
+                assert isinstance(row.trip_start_date, date)
+                assert isinstance(row.seq, int)
+                assert isinstance(row.distance, float)
 
             cursor.execute(inferno.SELECT_STOPTIMES_PLAIN, data)
             if cursor.rowcount == 0:
@@ -276,7 +279,7 @@ class TestInferno(unittest.TestCase):
         ydata = (100, 125, 200, 400)
         dt2 = datetime(2017, 5, 30, 23, 47, 15, tzinfo=utc)
 
-        stoptimes = [self.StopTime(None, None, dt2, None, None, None, a) for a in range(5, 7)]
+        stoptimes = [self.StopTime(None, None, dt2, None, None, None, a, None) for a in range(5, 7)]
         run = [self.Position(None, a, None, b) for a, b in enumerate(ydata, start=1)]
 
         calls = inferno.extrapolate(run, stoptimes, 'E')

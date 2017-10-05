@@ -1,5 +1,5 @@
 -- generate the timestampz for a gtfs schedule date and time
-CREATE OR REPLACE FUNCTION wall_time(d date, t interval, zone text)
+CREATE OR REPLACE FUNCTION wall_timez(d date, t interval, zone text)
     RETURNS timestamp with time zone AS $$
         SELECT ($1 + '12:00'::time)::timestamp without time zone at time zone $3 - interval '12 HOURS' + $2
     $$
@@ -32,8 +32,9 @@ CREATE TABLE IF NOT EXISTS calls (
   vehicle_id text not null,
   direction_id integer,
   route_id text,
-  source text,
+  trip_start_date date,
   feed_index int,
+  source text,
   CONSTRAINT calls_pkey PRIMARY KEY (vehicle_id, call_time)
 );
-CREATE INDEX calls_rds_index ON calls (route_id, direction_id, stop_id);
+CREATE INDEX calls_rds ON calls (route_id, direction_id, stop_id);
