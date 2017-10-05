@@ -1,7 +1,7 @@
 #!/user/bin/env python3.5
 from os import path
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from collections import namedtuple
 import unittest
 import psycopg2
@@ -47,7 +47,7 @@ class TestInferno(unittest.TestCase):
     def test_calls(self):
         '''call generator'''
         with self._connection.cursor(cursor_factory=NamedTupleCursor) as cursor:
-            runs = inferno.get_positions(cursor, self.service_date, 'positions', self.vehicle_id)
+            runs = inferno.get_positions(cursor, self.service_date, 'rt_vehicle_positions', self.vehicle_id)
 
             for run in inferno.filter_positions(runs):
                 trip = inferno.common([x.trip_id for x in run])
@@ -69,7 +69,7 @@ class TestInferno(unittest.TestCase):
         args = {'vehicle': self.vehicle_id, 'date': self.service_date}
 
         with self._connection.cursor() as curs:
-            curs.execute(inferno.VEHICLE_QUERY.format('positions'), args)
+            curs.execute(inferno.VEHICLE_QUERY.format('rt_vehicle_positions'), args)
             result = curs.fetchall()
 
         self.assertTrue(all(result[0]))
@@ -170,13 +170,13 @@ class TestInferno(unittest.TestCase):
     def test_get_positions(self):
         with self._connection.cursor() as cursor:
             # Check that imaginary vehicle returns nothing
-            runs = inferno.get_positions(cursor, self.service_date, 'positions', 'magic schoolbus')
+            runs = inferno.get_positions(cursor, self.service_date, 'rt_vehicle_positions', 'magic schoolbus')
             self.assertEqual(len(runs), 0)
 
-            runs = inferno.get_positions(cursor, self.service_date, 'positions', self.vehicle_id)
+            runs = inferno.get_positions(cursor, self.service_date, 'rt_vehicle_positions', self.vehicle_id)
             self.assertIsInstance(runs, list)
 
-            runs2 = inferno.get_positions(cursor, self.service_date, 'positions', '7149')
+            runs2 = inferno.get_positions(cursor, self.service_date, 'rt_vehicle_positions', '7149')
 
         try:
             self._run_tst(inferno.filter_positions(runs))
@@ -188,7 +188,7 @@ class TestInferno(unittest.TestCase):
             raise AssertionError('Run test failed for', self.service_date, '7149')
 
     def test_track_vehicle(self):
-        inferno.track_vehicle(self.vehicle_id, 'calls', self.service_date, self.connstr)
+        inferno.track_vehicle(self.vehicle_id, 'calls', self.service_date, self.connstr, positions_table='rt_vehicle_positions')
 
     def test_call(self):
         dt1 = datetime(2017, 5, 30, 23, 46, 15, tzinfo=utc)

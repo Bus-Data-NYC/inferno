@@ -1,5 +1,5 @@
-DROP TABLE IF EXISTS positions;
-CREATE TABLE positions (
+DROP TABLE IF EXISTS rt_vehicle_positions;
+CREATE TABLE rt_vehicle_positions (
     timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
     vehicle_id TEXT NOT NULL,
     latitude NUMERIC(8, 6) NOT NULL,
@@ -14,7 +14,7 @@ CREATE TABLE positions (
     dist_from_stop NUMERIC(8, 2),
     CONSTRAINT position_time_bus PRIMARY KEY (timestamp, vehicle_id)
 );
-INSERT INTO "positions" ("timestamp","vehicle_id","latitude","longitude","trip_start_date","trip_id","stop_id","dist_along_route","dist_from_stop")
+INSERT INTO "rt_vehicle_positions" ("timestamp","vehicle_id","latitude","longitude","trip_start_date","trip_id","stop_id","dist_along_route","dist_from_stop")
 VALUES
 (E'2017-05-20 20:00:52-04',7149,40.575477,-73.995158,E'2017-05-20',E'UP_B7-Weekday-SDon-119500_B74_605',E'305992',1315.6,142.63),
 (E'2017-05-20 20:01:25-04',7149,40.575159,-73.998025,E'2017-05-20',E'UP_B7-Weekday-SDon-119500_B74_605',E'305993',1496.16,78.5),
