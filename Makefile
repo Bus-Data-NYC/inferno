@@ -42,7 +42,7 @@ $(foreach y,$(years),$(addprefix calls-$(y)-,$(months))): calls-%:
 	$(MAKE) calls-day-$*-{01..$(shell date -d "$*-1 + 1 month - 1 day" "+%d")}
 
 calls-day-%:
-	$(PYTHON) src/inferno.py "$(CONNECTION)" $* --calls-table $(CALLS) --positions-table $(POSITIONS)
+	$(PYTHON) src/inferno.py "$(CONNECTION)" $* --calls-table $(CALLS) --positions-table $(POSITIONS) $(INFERNOFLAGS)
 
 test: | clean-test load-test
 	$(PYTHON) -m coverage run src/test.py -q

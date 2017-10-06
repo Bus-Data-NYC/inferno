@@ -428,6 +428,7 @@ def main():  # pragma: no cover
     parser.add_argument('--positions-table', type=str, default='positions')
     parser.add_argument('--vehicle', type=str)
     parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--quiet', action='store_true')
     parser.add_argument('--incomplete', action='store_true', help='Restart an incomplete date')
 
     args = parser.parse_args()
@@ -458,6 +459,9 @@ def main():  # pragma: no cover
                        cycle([args.connectionstring]),
                        cycle([args.positions_table]),
                        )
+
+    if args.quiet:
+        logger.setLevel(logging.WARNING)
 
     if args.debug:
         logging.info("debug mode")
