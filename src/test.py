@@ -26,7 +26,8 @@ class TestInferno(unittest.TestCase):
     service_date = '2017-05-20'
 
     Position = namedtuple('position', ['seq', 'distance', 'trip_id', 'time'])
-    StopTime = namedtuple('stoptime', ['feed_index', 'id', 'datetime', 'route_id', 'direction_id', 'seq', 'distance', 'trip_start_date'])
+    StopTime = namedtuple('stoptime', ['feed_index', 'stop_id', 'datetime', 'route_id',
+                                       'direction_id', 'seq', 'distance', 'date'])
 
     @classmethod
     def setUpClass(cls):
@@ -54,7 +55,7 @@ class TestInferno(unittest.TestCase):
 
                 stoptimes = inferno.get_stoptimes(cursor, trip, self.service_date)
                 self.assertGreater(len(stoptimes), 0)
-                self.assertEqual(len(stoptimes), len(set(x.id for x in stoptimes)), 'No duplicate stoptimes')
+                self.assertEqual(len(stoptimes), len(set(x.stop_id for x in stoptimes)), 'No duplicate stoptimes')
 
                 calls = inferno.generate_calls(run, stoptimes)
                 self.assertGreater(len(calls), 0, 'non-zero calls')
@@ -176,8 +177,6 @@ class TestInferno(unittest.TestCase):
             runs = inferno.get_positions(cursor, self.service_date, 'rt_vehicle_positions', self.vehicle_id)
             self.assertIsInstance(runs, list)
 
-            runs2 = inferno.get_positions(cursor, self.service_date, 'rt_vehicle_positions', '7149')
-
         try:
             self._run_tst(inferno.filter_positions(runs))
         except AssertionError:
@@ -188,11 +187,12 @@ class TestInferno(unittest.TestCase):
             raise AssertionError('Run test failed for', self.service_date, '7149')
 
     def test_track_vehicle(self):
-        inferno.track_vehicle(self.vehicle_id, 'calls', self.service_date, self.connstr, positions_table='rt_vehicle_positions')
+        inferno.track_vehicle(self.vehicle_id, 'calls', self.service_date,
+                              self.connstr, positions_table='rt_vehicle_positions')
 
     def test_call(self):
         dt1 = datetime(2017, 5, 30, 23, 46, 15, tzinfo=utc)
-        stoptime = self.StopTime(1, 'id', dt1, 'route', 1, 1, 1, '2017-05-01')
+        stoptime = self.StopTime(1, 'id', dt1, 'route', 1, 2, 1.1, '2017-05-01')
 
         seconds = 1496188035
         dt2 = datetime(2017, 5, 30, 23, 47, 15, tzinfo=utc)
@@ -200,19 +200,21 @@ class TestInferno(unittest.TestCase):
         fixture = {
             'route_id': stoptime.route_id,
             'direction_id': stoptime.direction_id,
-            'stop_id': stoptime.id,
+            'stop_id': stoptime.stop_id,
             'call_time': dt2,
             'feed_index': stoptime.feed_index,
             'deviation': dt2 - stoptime.datetime,
+            'seq': 2,
+            'distance': 1.1,
+            'date': '2017-05-01',
             'source': 'I',
-            'trip_start_date': '2017-05-01'
         }
         c1 = inferno.call(stoptime, seconds)
-        self.assertEqual(c1, fixture)
+        self.assertEqual(fixture, c1)
 
         fixture['source'] = 'X'
         c2 = inferno.call(stoptime, seconds, 'X')
-        self.assertEqual(c2, fixture)
+        self.assertEqual(fixture, c2)
 
         return c1
 
@@ -254,7 +256,7 @@ class TestInferno(unittest.TestCase):
             for row in cursor.fetchall():
                 assert isinstance(row.feed_index, int)
                 assert isinstance(row.datetime, datetime)
-                assert isinstance(row.trip_start_date, date)
+                assert isinstance(row.date, date)
                 assert isinstance(row.seq, int)
                 assert isinstance(row.distance, float)
 
@@ -264,8 +266,9 @@ class TestInferno(unittest.TestCase):
                 raise AssertionError('No result for query')
 
             for row in cursor.fetchall():
-                assert isinstance(row[2], datetime)
-                assert isinstance(row[6], float)
+                assert isinstance(row.datetime, datetime)
+                assert isinstance(row.date, date)
+                assert isinstance(row.distance, float)
 
     def test_extrapolate(self):
         with self.assertRaises(ValueError):

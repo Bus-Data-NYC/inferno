@@ -92,9 +92,9 @@ SELECT_CALLED_VEHICLES = """SELECT vehicle_id FROM calls
 
 SELECT_STOPTIMES = """SELECT
     feed_index,
-    stop_id AS id,
+    stop_id,
     wall_timez(DATE %(date)s, arrival_time, agency_timezone) AS datetime,
-    DATE %(date)s as trip_start_date,
+    DATE %(date)s as date,
     route_id,
     direction_id,
     stop_sequence AS seq,
@@ -116,9 +116,9 @@ ORDER BY stop_sequence ASC
 
 SELECT_STOPTIMES_PLAIN = """SELECT DISTINCT
     feed_index,
-    stop_id id,
+    stop_id,
     wall_timez(date %(date)s, arrival_time, agency_timezone) AS datetime,
-    date %(date)s as trip_start_date,
+    date %(date)s as date,
     route_id,
     direction_id,
     stop_sequence AS seq,
@@ -133,7 +133,7 @@ ORDER BY stop_sequence ASC;
 
 INSERT = """INSERT INTO {}
     (vehicle_id, trip_id, route_id, direction_id, stop_id,
-        call_time, source, deviation, feed_index, trip_start_date)
+        call_time, source, deviation, feed_index, date)
     VALUES (%(vehicle)s, %(trip)s, %(route_id)s, %(direction_id)s, %(stop_id)s,
         %(call_time)s, %(source)s, %(deviation)s, %(feed_index)s, %(date)s)
     ON CONFLICT DO NOTHING"""
@@ -300,17 +300,12 @@ def call(stoptime, seconds, method=None):
     Returns a dict with route, direction, stop, call time and source.
     Call time is in UTC.
     '''
-    calltime = datetime.utcfromtimestamp(seconds).replace(tzinfo=pytz.UTC)
-    return {
-        'route_id': stoptime.route_id,
-        'direction_id': stoptime.direction_id,
-        'stop_id': stoptime.id,
-        'trip_start_date': stoptime.trip_start_date,
-        'call_time': calltime,
-        'deviation': calltime - stoptime.datetime,
-        'source': method or 'I',
-        'feed_index': stoptime.feed_index,
-    }
+    result = dict(stoptime._asdict())
+    result['call_time'] = datetime.utcfromtimestamp(seconds).replace(tzinfo=pytz.UTC)
+    result['deviation'] = result['call_time'] - stoptime.datetime
+    del result['datetime']
+    result['source'] = method or 'I'
+    return result
 
 
 def generate_calls(run: list, stops: list) -> list:
