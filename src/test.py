@@ -66,7 +66,7 @@ class TestInferno(unittest.TestCase):
                                                           for x in calls]), 'Monotonically increasing call times')
                 self.assertEqual(len(calls), len(set(c['call_time'] for c in calls)), 'No duplicate calls')
 
-                self.assertEqual(len(calls), len(stoptimes), 'Same number of calls as stop times in (%s)' % trip)
+                self.assertLessEqual(len(calls), len(stoptimes), 'Roughly same number of calls as stop times in (%s)' % trip)
 
     def test_vehicle_query(self):
         args = {'vehicle': self.vehicle_id, 'date': self.service_date}

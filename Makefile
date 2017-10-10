@@ -55,7 +55,8 @@ load-test:
 	psql inferno -f src/test_data/stop_times.sql
 
 clean-test:
-	-psql inferno -c "truncate calls, rt_vehicle_positions, gtfs_trips, gtfs_stop_times, \
+	-psql inferno -c "drop table calls"
+	-psql inferno -c "truncate rt_vehicle_positions, gtfs_trips, gtfs_stop_times, \
 		gtfs_calendar, gtfs_feed_info, gtfs_agency, gtfs_shape_geoms cascade;"
 
 init:

@@ -47,6 +47,9 @@ MIN_EXTRAP_DIST = 1
 # The number of positions to use when extrapolating.
 EXTRAP_LENGTH = 5
 
+# Maximum number of stops to extrapolate forward or backward
+EXTRAP_COUNT = 2
+
 # Doing one complicated thing in this query.
 # Some bus routes are loops with tails (e.g. B74):
 #    +--+
@@ -342,7 +345,7 @@ def generate_calls(run: list, stops: list) -> list:
     if si > 0 and len(back_mask) > 1:
         logging.debug('extrapolating backward. si = %s', si)
         try:
-            backward = extrapolate(back_mask, stops[:si], 'S')
+            backward = extrapolate(back_mask, stops[si - EXTRAP_COUNT : si], 'S')
             calls = backward + calls
 
         except Exception as error:
@@ -352,7 +355,7 @@ def generate_calls(run: list, stops: list) -> list:
     if ei < len(stops) and len(forward_mask) > 1:
         logging.debug('extrapolating forward. ei = %s', ei)
         try:
-            forward = extrapolate(forward_mask, stops[ei:], 'E')
+            forward = extrapolate(forward_mask, stops[ei : ei + EXTRAP_COUNT], 'E')
             calls.extend(forward)
 
         except Exception as error:
