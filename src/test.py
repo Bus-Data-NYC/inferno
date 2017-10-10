@@ -37,6 +37,8 @@ class TestInferno(unittest.TestCase):
             print('TRUNCATE TABLE calls')
             c.execute('TRUNCATE TABLE calls')
 
+            c.execute("SELECT nextval('run_index')")
+
         cls.sequence_data = [cls.Position(x[0], x[1], 'x', x[2]) for x in [
             (25, 6515.72, 100), (26, 6763.42, 110), (27, 6856.14, 120), (28, 6848.21, 130),
             (29, 6848.21, 140), (31, 6848.21, 150), (30, 6848.21, 160)]]
@@ -198,7 +200,6 @@ class TestInferno(unittest.TestCase):
         dt2 = datetime(2017, 5, 30, 23, 47, 15, tzinfo=utc)
 
         fixture = {
-            'route_id': stoptime.route_id,
             'direction_id': stoptime.direction_id,
             'stop_id': stoptime.stop_id,
             'call_time': dt2,

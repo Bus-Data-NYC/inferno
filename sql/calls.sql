@@ -26,15 +26,17 @@ CREATE OR REPLACE FUNCTION safe_locate
 -- call time is a timestampz, will be passed into the db as a UTC datetime
 CREATE TABLE IF NOT EXISTS calls (
   trip_id text not null,
+  run_index bigint,
   deviation interval,
   call_time timestamp with time zone not null,
   stop_id text,
   vehicle_id text not null,
   direction_id integer,
-  route_id text,
   date date,
   feed_index int,
-  source text,
+  source char(1),
   CONSTRAINT calls_pkey PRIMARY KEY (vehicle_id, call_time)
 );
-CREATE INDEX calls_rds ON calls (route_id, direction_id, stop_id);
+CREATE SEQUENCE IF NOT EXISTS run_index CACHE 3 NO CYCLE OWNED BY calls.run_index;
+
+CREATE INDEX calls_run ON calls (run_index);

@@ -59,6 +59,7 @@ VEHICLE_QUERY = """
 SELECT
     EXTRACT(EPOCH FROM timestamp) AS time,
     trip_id,
+    route_id,
     trip_start_date date,
     stop_sequence seq,
     safe_locate(
@@ -132,9 +133,9 @@ ORDER BY stop_sequence ASC;
 """
 
 INSERT = """INSERT INTO {}
-    (vehicle_id, trip_id, route_id, direction_id, stop_id,
+    (vehicle_id, trip_id, direction_id, stop_id, run_index,
         call_time, source, deviation, feed_index, date)
-    VALUES (%(vehicle)s, %(trip)s, %(route_id)s, %(direction_id)s, %(stop_id)s,
+    VALUES (%(vehicle)s, %(trip)s, %(direction_id)s, %(stop_id)s, currval('run_index'),
         %(call_time)s, %(source)s, %(deviation)s, %(feed_index)s, %(date)s)
     ON CONFLICT DO NOTHING"""
 
@@ -403,8 +404,17 @@ def track_vehicle(vehicle_id, calls_table, date, connectionstring, positions_tab
                     logging.warning('Missing stoptimes for %s', trip_id)
                     continue
 
+                # Check that route_id in stoptimes and run are the same
+                try:
+                    assert stoptimes[0].route_id == common([a.route_id for a in run])
+                except AssertionError:
+                    logging.warning('route_id mismatch for trip_id: %s on %s', trip_id, date)
+
                 # Generate (infer) calls.
                 calls = generate_calls(run, stoptimes)
+
+                # update run_index sequence
+                cursor.execute("SELECT nextval('run_index')")
 
                 # write calls to sink
                 cursor.executemany(
