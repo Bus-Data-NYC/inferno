@@ -62,7 +62,6 @@ VEHICLE_QUERY = """
 SELECT
     EXTRACT(EPOCH FROM timestamp) AS time,
     trip_id,
-    route_id,
     trip_start_date date,
     stop_sequence seq,
     safe_locate(
@@ -405,12 +404,6 @@ def track_vehicle(vehicle_id, calls_table, date, connectionstring, positions_tab
                 if any(x.distance is None for x in stoptimes):
                     logging.warning('Missing stoptimes for %s', trip_id)
                     continue
-
-                # Check that route_id in stoptimes and run are the same
-                try:
-                    assert stoptimes[0].route_id == common([a.route_id for a in run])
-                except AssertionError:
-                    logging.warning('route_id mismatch for trip_id: %s on %s', trip_id, date)
 
                 # Generate (infer) calls.
                 calls = generate_calls(run, stoptimes)
