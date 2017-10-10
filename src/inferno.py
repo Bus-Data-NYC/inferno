@@ -307,7 +307,6 @@ def call(stoptime, seconds, method=None):
     result = dict(stoptime._asdict())
     result['call_time'] = datetime.utcfromtimestamp(seconds).replace(tzinfo=pytz.UTC)
     result['deviation'] = result['call_time'] - stoptime.datetime
-    del result['datetime']
     result['source'] = method or 'I'
     return result
 

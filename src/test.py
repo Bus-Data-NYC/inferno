@@ -211,11 +211,11 @@ class TestInferno(unittest.TestCase):
             'source': 'I',
         }
         c1 = inferno.call(stoptime, seconds)
-        self.assertEqual(fixture, c1)
+        for k, v in fixture.items():
+            self.assertEqual(v, c1[k])
 
-        fixture['source'] = 'X'
         c2 = inferno.call(stoptime, seconds, 'X')
-        self.assertEqual(fixture, c2)
+        self.assertEqual('X', c2['source'])
 
         return c1
 
