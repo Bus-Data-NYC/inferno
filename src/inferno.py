@@ -206,16 +206,17 @@ def get_positions(cursor, date, positions_table, vehicle):
         logging.warning('No rows found for %s on %s', vehicle, date)
         return []
 
-    prev = namedtuple('prev', [])()
-    position = cursor.fetchone()
-    while position is not None:
+    # dummy position for comparison with first row
+    prev = namedtuple('prev', 'distance')(0)
+
+    for position in cursor:
         # If trip IDs differ
         if not samerun(prev, position):
             # start a new run
             runs.append([])
 
         # Check if distance is the same or greater, otherwise discard.
-        if getattr(prev, 'distance', 0) <= position.distance:
+        if prev.distance <= position.distance:
             # append the position
             runs[-1].append(position)
 
