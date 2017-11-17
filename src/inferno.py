@@ -378,6 +378,8 @@ def increasing(L):
 
 def track_vehicle(vehicle_id, calls_table, date, connectionstring, positions_table=None):
     positions_table = positions_table or 'positions'
+    runs_record = []
+
     with psycopg2.connect(connectionstring) as conn:
         logging.info('STARTING %s', vehicle_id)
         with conn.cursor(cursor_factory=NamedTupleCursor) as cursor:
@@ -406,8 +408,20 @@ def track_vehicle(vehicle_id, calls_table, date, connectionstring, positions_tab
                     logging.warning('Missing stoptimes for %s', trip_id)
                     continue
 
+                if any(
+                    (r['start'] <= stoptimes[0].datetime <= r['end']) and
+                    (r['start'] <= stoptimes[-1].datetime <= r['end'])
+                    for r in runs_record
+                ):
+                    logging.warning('Skipping a nested run %s', trip_id)
+                    continue
+
                 # Generate (infer) calls.
                 calls = generate_calls(run, stoptimes)
+
+                # record calls for this run and check for nested runs (bad data)
+                imputed = [c for c in calls if c['source'] == 'I']
+                runs_record.append({'start': imputed[0]['call_time'], 'end': imputed[-1]['call_time']})
 
                 # update run_index sequence
                 cursor.execute("SELECT nextval('run_index')")
