@@ -64,7 +64,13 @@ SELECT
     trip_id,
     trip_start_date date,
     stop_sequence seq,
-    safe_locate(
+    (CASE WHEN
+        dist_along_route is NULL and dist_from_stop is NULL
+    THEN ST_LineLocatePoint(
+        r.the_geom,
+        ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
+        ) * r.length
+    ELSE safe_locate(
         r.the_geom,
         ST_SetSRID(ST_MakePoint(longitude, latitude), 4326),
         -- greatest lower-bound is 500m from end of route, lowest is 0, default is 500m before estimated position
@@ -72,6 +78,7 @@ SELECT
         -- greatest upper-bound is length, lowest is 100m from start, default is 100m past stop
         LEAST(length, GREATEST(dist_along_route, 0) + 100),
         r.length
+    ) END
     )::numeric(10, 2) AS distance
 FROM {0} p
     LEFT JOIN gtfs_trips USING (trip_id)
@@ -80,7 +87,7 @@ FROM {0} p
     LEFT JOIN gtfs_shape_geoms r USING (feed_index, shape_id)
 WHERE
     vehicle_id = %(vehicle)s
-    AND trip_start_date = date %(date)s
+    AND trip_start_date = %(date)s::date
 ORDER BY
     trip_id,
     timestamp
