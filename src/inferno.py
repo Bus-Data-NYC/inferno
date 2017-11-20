@@ -428,7 +428,10 @@ def track_vehicle(vehicle_id, calls_table, date, connectionstring, positions_tab
 
                 # record calls for this run and check for nested runs (bad data)
                 imputed = [c for c in calls if c['source'] == 'I']
-                runs_record.append({'start': imputed[0]['call_time'], 'end': imputed[-1]['call_time']})
+                try:
+                    runs_record.append({'start': imputed[0]['call_time'], 'end': imputed[-1]['call_time']})
+                except IndexError:
+                    continue
 
                 # update run_index sequence
                 cursor.execute("SELECT nextval('run_index')")
