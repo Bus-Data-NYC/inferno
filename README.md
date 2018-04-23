@@ -31,3 +31,7 @@ The script runs for a single day of positions at a time. Here's a step-by-step w
 * Fields `bearing`, `dist_along_route` and `dist_from_stop` are unreliable. They're basically only useful as rough estimations. The latter two fields aren't available for GTFS-RT data.
 * Bus changes `trip_id` for a number of stops in the middle of a run. Currently not dealt with effectively, the same bus may be inferred to have made two simultaneous runs.
 * A `trip_id` occurs twice in the same day. The `run_index` field is designed to cope with this.
+
+## License
+
+Copyright 2017-18 TransitCenter. Made available under the Apache 2.0 license.
