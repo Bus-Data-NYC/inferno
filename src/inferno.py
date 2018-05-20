@@ -82,17 +82,17 @@ SELECT
     (CASE WHEN
         dist_along_route is NULL and dist_from_stop is NULL
     THEN ST_LineLocatePoint(
-        r.the_geom,
-        ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
-        ) * r.length
+        ST_Transform(r.the_geom, %(epsg)s),
+        ST_Transform(ST_SetSRID(ST_MakePoint(longitude, latitude), 4326), %(epsg)s)
+        ) * CASE %(epsg)s WHEN 4326 THEN r.length ELSE ST_Length(ST_Transform(r.the_geom, %(epsg)s)) END
     ELSE safe_locate(
-        r.the_geom,
-        ST_SetSRID(ST_MakePoint(longitude, latitude), 4326),
+        ST_Transform(r.the_geom, %(epsg)s),
+        ST_Transform(ST_SetSRID(ST_MakePoint(longitude, latitude), 4326), %(epsg)s),
         -- greatest lower-bound is 500m from end of route, lowest is 0, default is 500m before estimated position
         LEAST(length - 500, GREATEST(0, dist_along_route - dist_from_stop - 500)),
         -- greatest upper-bound is length, lowest is 100m from start, default is 100m past stop
         LEAST(length, GREATEST(dist_along_route, 0) + 100),
-        r.length
+        CASE %(epsg)s WHEN 4326 THEN r.length ELSE ST_Length(ST_Transform(r.the_geom, %(epsg)s)) END
     ) END
     )::numeric(10, 2) AS distance
 FROM {0} p
@@ -214,7 +214,7 @@ def samerun(a, b):
     return getattr(a, 'trip_id', None) == b.trip_id and getattr(a, 'seq', 0) <= b.seq
 
 
-def get_positions(cursor, date, positions_table, vehicle):
+def get_positions(cursor, positions_table, query_args):
     '''
     Compile list of positions for a vehicle, using a list of positions
     and filtering based on positions that reflect change in pattern or next_stop.
@@ -223,9 +223,9 @@ def get_positions(cursor, date, positions_table, vehicle):
     query = VEHICLE_QUERY.format(positions_table or 'positions')
 
     # load up cursor with every position for vehicle
-    cursor.execute(query, {'vehicle': vehicle, 'date': date})
+    cursor.execute(query, query_args)
     if cursor.rowcount == 0:
-        logging.warning('No rows found for %s on %s', vehicle, date)
+        logging.warning('No rows found for %s on %s', query_args['vehicle'], query_args['date'])
         return []
 
     # dummy position for comparison with first row
@@ -398,15 +398,15 @@ def increasing(L):
     return all(x <= y for x, y in zip(L, L[1:]))
 
 
-def track_vehicle(vehicle_id, calls_table, date, connectionstring, positions_table=None):
+def track_vehicle(vehicle_id, query_args: dict, connectionstring, calls_table, positions_table=None):
     positions_table = positions_table or 'positions'
     runs_record = []
+    query_args['vehicle'] = vehicle_id
 
     with psycopg2.connect(connectionstring) as conn:
         logging.info('STARTING %s', vehicle_id)
         with conn.cursor(cursor_factory=NamedTupleCursor) as cursor:
-            runs = get_positions(cursor, date, positions_table, vehicle_id)
-            runs = filter_positions(runs)
+            runs = filter_positions(get_positions(cursor, positions_table, query_args))
 
             # Counter is just for logging.
             lenc = 0
@@ -417,14 +417,14 @@ def track_vehicle(vehicle_id, calls_table, date, connectionstring, positions_tab
                     continue
                 elif len(run) <= 2:
                     logging.debug('short run (%d positions), v_id=%s, %s',
-                                  len(run), vehicle_id, run[0].time)
+                                  len(run), query_args['vehicle'], run[0].time)
                     continue
 
                 # Assume most common trip is the correct one.
                 trip_id = common([x.trip_id for x in run])
 
                 # Get the scheduled list of stops for this trip.
-                stoptimes = get_stoptimes(cursor, trip_id, date)
+                stoptimes = get_stoptimes(cursor, trip_id, query_args['date'])
 
                 if any(x.distance is None for x in stoptimes):
                     logging.warning('Missing stoptimes for %s', trip_id)
@@ -472,6 +472,8 @@ def main():  # pragma: no cover
     parser.add_argument('--calls-table', type=str, default='calls')
     parser.add_argument('--positions-table', type=str, default='positions')
     parser.add_argument('--vehicle', type=str)
+    parser.add_argument('--epsg', type=int, default=4326,
+                        help='projection in which to calculate distances')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--quiet', action='store_true')
     parser.add_argument('--incomplete', action='store_true', help='Restart an incomplete date')
@@ -499,9 +501,9 @@ def main():  # pragma: no cover
         logging.info('Found %s vehicles', len(vehicles))
 
     itervehicles = zip(vehicles,
-                       cycle([args.calls_table]),
-                       cycle([args.date]),
+                       cycle([{'date': args.date, 'epsg': args.epsg}]),
                        cycle([args.connectionstring]),
+                       cycle([args.calls_table]),
                        cycle([args.positions_table]),
                        )
 
