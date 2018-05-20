@@ -2,11 +2,10 @@ shell = bash
 
 PYTHON = python3.5
 
-PSQLFLAGS ?=
-PG_DATABASE ?= nycbus
+PG_DATABASE ?=
 
 CONNECTION = dbname=$(PG_DATABASE)
-PSQL = psql $(PG_DATABASE) $(PSQLFLAGS)
+PSQLFLAGS = $(PG_DATABASE)
 
 ifdef PG_HOST
 CONNECTION += host=$(PG_HOST)
@@ -26,6 +25,8 @@ endif
 ifdef PG_PASSWORD
 CONNECTION += password=$(PG_PASSWORD)
 endif
+
+PSQL = psql $(PSQLFLAGS)
 
 CALLS = calls
 POSITIONS = rt_vehicle_positions

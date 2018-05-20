@@ -349,7 +349,7 @@ def generate_calls(run: list, stops: list) -> list:
     si = bisect_left(stop_positions, obs_distances[0])
     ei = bisect(stop_positions, obs_distances[-1])
 
-    if len(stops[si:ei]) == 0:
+    if len(stops[si:ei]):
         return []
 
     # Interpolate main chunk of positions.
@@ -413,7 +413,7 @@ def track_vehicle(vehicle_id, query_args: dict, connectionstring, calls_table, p
 
             # each run will become a trip
             for run in runs:
-                if len(run) == 0:
+                if not run:
                     continue
                 elif len(run) <= 2:
                     logging.debug('short run (%d positions), v_id=%s, %s',
