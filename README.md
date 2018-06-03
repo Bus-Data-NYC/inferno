@@ -6,11 +6,21 @@ Transit call inferrer.
 * Python 3.5+
 * PostGreSQL
 
+## Setup
+
+Set [PG* environment variables](https://www.postgresql.org/docs/current/static/libpq-envars.html):
+```
+PGHOST=host
+PGDATABASE=db
+PGUSER=name
+export PGHOST PGDATABASE PGUSER
+```
+
 ## Quickstart
 
 * Download or scrape position data for at least a calendar day (e.g. with .
 * Download GTFS schedule data and load into Postgres with [gtfs-sql-importer](https://github.com/fitnr/gtfs-sql-importer).
-* Update the PG database for Inferno with the command `make init PG_HOST=host PG_DATABASE=db PG_USER=name`, where the `PG_` variables are your Postgres connection details.
+* Prepare a Postgres database for Inferno with the command `make init`.
 * Run `make calls-day-YYYY-MM-DD`.
 
 ## Methodology

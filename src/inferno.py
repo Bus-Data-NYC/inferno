@@ -17,6 +17,7 @@
 from __future__ import division
 import sys
 import os
+import getpass
 from bisect import bisect, bisect_left
 from typing import Callable
 from datetime import datetime, timedelta
@@ -349,7 +350,10 @@ def generate_calls(run: list, stops: list) -> list:
     si = bisect_left(stop_positions, obs_distances[0])
     ei = bisect(stop_positions, obs_distances[-1])
 
-    if len(stops[si:ei]):
+    if not stops[si:ei]:
+        logging.debug('No calls because no stops between si (%s) and ei (%s)',
+                      obs_distances[0], obs_distances[-1])
+        logging.debug('Stop distance range: %s - %s', min(stop_positions), max(stop_positions))
         return []
 
     # Interpolate main chunk of positions.
@@ -462,6 +466,19 @@ def track_vehicle(vehicle_id, query_args: dict, connectionstring, calls_table, p
                 logging.debug('%s', cursor.statusmessage)
 
             logging.info('COMMIT vehicle= %s, calls= %s', vehicle_id, lenc)
+
+
+def connection_params():
+    pg = {
+        'PGUSER': 'user',
+        'PGHOST': 'host',
+        'PGPORT': 'port',
+        'PGPASSWORD': 'password',
+        'PGPASSFILE': 'passfile',
+    }
+    params = {'dbname': os.environ.get('PGDATABASE', getpass.getuser())}
+    params.update({v: os.environ[k] for k, v in pg.items() if k in os.environ})
+    return params
 
 
 def main():  # pragma: no cover

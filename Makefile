@@ -2,31 +2,12 @@ shell = bash
 
 PYTHON = python3.5
 
-PG_DATABASE ?=
-
-CONNECTION = dbname=$(PG_DATABASE)
+PGUSER ?= $(USER)
+PGDATABASE ?= $(PGUSER)
 PSQLFLAGS = $(PG_DATABASE)
-
-ifdef PG_HOST
-CONNECTION += host=$(PG_HOST)
-PSQLFLAGS += -h $(PG_HOST)
-endif
-
-ifdef PG_PORT
-CONNECTION += port=$(PG_PORT)
-PSQLFLAGS += -p $(PG_POST)
-endif
-
-ifdef PG_USER
-CONNECTION += user=$(PG_USER)
-PSQLFLAGS += -U $(PG_USER)
-endif
-
-ifdef PG_PASSWORD
-CONNECTION += password=$(PG_PASSWORD)
-endif
-
 PSQL = psql $(PSQLFLAGS)
+
+export PGUSER PGDATABASE
 
 CALLS = calls
 POSITIONS = rt_vehicle_positions
@@ -43,7 +24,7 @@ $(foreach y,$(years),$(addprefix calls-$(y)-,$(months))): calls-%:
 	$(MAKE) calls-day-$*-{01..$(shell date -d "$*-1 + 1 month - 1 day" "+%d")}
 
 calls-day-%:
-	$(PYTHON) src/inferno.py "$(CONNECTION)" $* --calls-table $(CALLS) --positions-table $(POSITIONS) $(INFERNOFLAGS)
+	$(PYTHON) src/inferno.py $* --calls-table $(CALLS) --positions-table $(POSITIONS) $(INFERNOFLAGS)
 
 test: | clean-test load-test
 	$(PYTHON) -m coverage run src/test.py -q
