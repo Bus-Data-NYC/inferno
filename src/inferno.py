@@ -402,12 +402,12 @@ def increasing(L):
     return all(x <= y for x, y in zip(L, L[1:]))
 
 
-def track_vehicle(vehicle_id, query_args: dict, connectionstring, calls_table, positions_table=None):
+def track_vehicle(vehicle_id, query_args: dict, conn_kwargs: dict, calls_table, positions_table=None):
     positions_table = positions_table or 'positions'
     runs_record = []
     query_args['vehicle'] = vehicle_id
 
-    with psycopg2.connect(connectionstring) as conn:
+    with psycopg2.connect(**conn_kwargs) as conn:
         logging.info('STARTING %s', vehicle_id)
         with conn.cursor(cursor_factory=NamedTupleCursor) as cursor:
             runs = filter_positions(get_positions(cursor, positions_table, query_args))
@@ -484,7 +484,6 @@ def connection_params():
 def main():  # pragma: no cover
     # connectionstring: str, table, date, vehicle=None
     parser = argparse.ArgumentParser()
-    parser.add_argument('connectionstring', type=str)
     parser.add_argument('date', type=str)
     parser.add_argument('--calls-table', type=str, default='calls')
     parser.add_argument('--positions-table', type=str, default='positions')
@@ -499,10 +498,12 @@ def main():  # pragma: no cover
 
     psycopg2.extensions.register_type(DEC2FLOAT)
 
+    conn_kwargs = connection_params()
+
     if args.vehicle:
         vehicles = [args.vehicle]
     else:
-        with psycopg2.connect(args.connectionstring) as conn:
+        with psycopg2.connect(**conn_kwargs) as conn:
             with conn.cursor() as cursor:
                 logging.info('Finding vehicles for %s', args.date)
                 cursor.execute(SELECT_VEHICLE.format(args.positions_table), (args.date,))
@@ -519,7 +520,7 @@ def main():  # pragma: no cover
 
     itervehicles = zip(vehicles,
                        cycle([{'date': args.date, 'epsg': args.epsg}]),
-                       cycle([args.connectionstring]),
+                       cycle([conn_kwargs]),
                        cycle([args.calls_table]),
                        cycle([args.positions_table]),
                        )
