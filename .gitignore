@@ -6,3 +6,6 @@
 *.pyc
 *.csv
 *.qgs
+*.qgs~
+*.ipynb
+.ipynb_checkpoints
