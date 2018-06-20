@@ -93,14 +93,14 @@ SELECT
         LEAST(length - 500, GREATEST(0, dist_along_route - dist_from_stop - 500)),
         -- greatest upper-bound is length, lowest is 100m from start, default is 100m past stop
         LEAST(length, GREATEST(dist_along_route, 0) + 100),
-        CASE %(epsg)s WHEN 4326 THEN r.length ELSE ST_Length(ST_Transform(r.the_geom, %(epsg)s)) END
+        (CASE %(epsg)s WHEN 4326 THEN r.length ELSE ST_Length(ST_Transform(r.the_geom, %(epsg)s)) END)::numeric
     ) END
     )::numeric(10, 2) AS distance
 FROM {0} p
-    LEFT JOIN gtfs_trips USING (trip_id)
+    LEFT JOIN gtfs.trips USING (trip_id)
     -- TODO: change to LEFT JOIN when fix implemented for orphan stops
-    INNER JOIN gtfs_stop_times st USING (feed_index, trip_id, stop_id)
-    LEFT JOIN gtfs_shape_geoms r USING (feed_index, shape_id)
+    INNER JOIN gtfs.stop_times st USING (feed_index, trip_id, stop_id)
+    LEFT JOIN gtfs.shape_geoms r USING (feed_index, shape_id)
 WHERE
     vehicle_id = %(vehicle)s
     AND trip_start_date = %(date)s::date
@@ -125,15 +125,15 @@ SELECT_STOPTIMES = """SELECT
     direction_id,
     stop_sequence AS seq,
     shape_dist_traveled distance
-FROM gtfs_trips
-    LEFT JOIN gtfs_agency USING (feed_index)
-    LEFT JOIN gtfs_stop_times USING (feed_index, trip_id)
-    LEFT JOIN gtfs_stops USING (feed_index, stop_id)
+FROM gtfs.trips
+    LEFT JOIN gtfs.agency USING (feed_index)
+    LEFT JOIN gtfs.stop_times USING (feed_index, trip_id)
+    LEFT JOIN gtfs.stops USING (feed_index, stop_id)
 WHERE trip_id = %(trip)s
     AND feed_index = (
         SELECT MAX(feed_index)
-        FROM gtfs_trips
-            LEFT JOIN gtfs_calendar USING (feed_index, service_id)
+        FROM gtfs.trips
+            LEFT JOIN gtfs.calendar USING (feed_index, service_id)
         WHERE trip_id = %(trip)s
             AND date %(date)s BETWEEN start_date and end_date
     )
@@ -149,10 +149,10 @@ SELECT_STOPTIMES_PLAIN = """SELECT DISTINCT
     direction_id,
     stop_sequence AS seq,
     shape_dist_traveled distance
-FROM gtfs_trips
-    LEFT JOIN gtfs_agency USING (feed_index)
-    LEFT JOIN gtfs_stop_times USING (feed_index, trip_id)
-    LEFT JOIN gtfs_stops USING (feed_index, stop_id)
+FROM gtfs.trips
+    LEFT JOIN gtfs.agency USING (feed_index)
+    LEFT JOIN gtfs.stop_times USING (feed_index, trip_id)
+    LEFT JOIN gtfs.stops USING (feed_index, stop_id)
 WHERE trip_id = %(trip)s
 ORDER BY stop_sequence ASC;
 """
