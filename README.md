@@ -4,7 +4,7 @@ Transit call inferrer.
 
 ## Requirements
 * Python 3.5+
-* PostGreSQL
+* PostGreSQL with PostGIS
 
 ## Setup
 

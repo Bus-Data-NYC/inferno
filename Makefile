@@ -4,7 +4,7 @@ PYTHON = python3.5
 
 PGUSER ?= $(USER)
 PGDATABASE ?= $(PGUSER)
-PSQLFLAGS = $(PG_DATABASE)
+PSQLFLAGS = $(PGDATABASE)
 PSQL = psql $(PSQLFLAGS)
 
 export PGUSER PGDATABASE
@@ -14,7 +14,7 @@ POSITIONS = rt_vehicle_positions
 
 months = 01 02 03 04 05 06 07 08 09 10 11 12
 
-years = 2015 2016 2017
+years = 2017 2018
 
 .PHONY: all calls-day-% calls-% init load-test clear-test
 
