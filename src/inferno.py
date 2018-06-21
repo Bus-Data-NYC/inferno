@@ -104,9 +104,7 @@ FROM {0} p
 WHERE
     vehicle_id = %(vehicle)s
     AND trip_start_date = %(date)s::date
-ORDER BY
-    trip_id,
-    timestamp
+ORDER BY "timestamp"
 """
 
 SELECT_VEHICLE = """SELECT DISTINCT vehicle_id
@@ -147,7 +145,6 @@ SELECT_STOPTIMES_PLAIN = """SELECT DISTINCT
     date %(date)s as date,
     route_id,
     direction_id,
-    stop_sequence AS seq,
     shape_dist_traveled distance
 FROM gtfs.trips
     LEFT JOIN gtfs.agency USING (feed_index)
@@ -192,14 +189,6 @@ def desc2fn(description: tuple) -> tuple:
     return tuple(d.name for d in description)
 
 
-def compare_seq(x, y):
-    try:
-        return x.seq >= y.seq
-    except TypeError:
-        # Be lenient when there's bad data: return True when None.
-        return x.seq is None or y.seq is None
-
-
 def compare_dist(a, b):
     try:
         return a.distance >= b.distance
@@ -208,11 +197,8 @@ def compare_dist(a, b):
         return False
 
 
-def samerun(a, b):
-    '''Check if two positions belong to the same run'''
-    # Trip is the same.
-    # Sequence is the same or higher.
-    return getattr(a, 'trip_id', None) == b.trip_id and getattr(a, 'seq', 0) <= b.seq
+def toutc(timestamp):
+    return datetime.utcfromtimestamp(timestamp).replace(tzinfo=pytz.UTC)
 
 
 def get_positions(cursor, positions_table, query_args):
@@ -230,37 +216,32 @@ def get_positions(cursor, positions_table, query_args):
         return []
 
     # dummy position for comparison with first row
-    prev = namedtuple('prev', 'distance')(0)
+    prev = namedtuple('prev', ('distance', 'trip_id'))(0, None)
 
     for position in cursor:
-        # If trip IDs differ
-        if not samerun(prev, position):
-            # start a new run
+        # If we're on a new trip, start a new run
+        if not position.trip_id == prev.trip_id:
             runs.append([])
 
-        # Check if distance is the same or greater, otherwise discard.
-        if prev.distance <= position.distance:
-            # append the position
+        # If the distance has not declined, append the position
+        if compare_dist(position, prev) or position.trip_id != prev.trip_id:
             runs[-1].append(position)
+            prev = position
 
-        prev = position
         position = cursor.fetchone()
 
     return runs
 
 
 def filter_positions(runs):
-    '''Filter out positions from runs to eliminate out-of-order stop sequences.'''
-    return [mask(run, key=lambda a, b: compare_seq(a, b) and compare_dist(a, b))
-            for run in runs
-            if len(run) > 2
-            and len(set(r.seq for r in run)) > 1
-            ]
+    '''Filter runs to elimate shorties.'''
+    return [run for run in runs if len(run) > 2 and len(set(r.seq for r in run)) > 1]
 
 
 def get_stoptimes(cursor, tripid, date):
     logging.debug('Fetching stoptimes for %s', tripid)
     fields = {'trip': tripid, 'date': date}
+
     cursor.execute(SELECT_STOPTIMES, fields)
 
     if cursor.rowcount == 0:
@@ -313,8 +294,10 @@ def extrapolate(run, stoptimes, method=None):
             result = []
             # Slice from the beginning (if forward) or end (if backward)
             # of the run.
-            logging.debug('Invalid extrap. method: %s. comparison: %s',
-                          method, [round(ys[0 if method == 'E' else -1] - y, 1) for y in result])
+            logging.debug('Invalid extrap. method: %s. slope: %s. comparison: %s',
+                          method,
+                          round(slope, 2),
+                          [compare(y) for y in result])
             logging.debug('new extrap length: %s', len(xs) - 1)
             xs.pop(0 if method == 'E' else -1)
             ys.pop(0 if method == 'E' else -1)
@@ -327,19 +310,19 @@ def call(stoptime, seconds, method=None):
     Returns a dict with route, direction, stop, call time and source.
     Call time is in UTC.
     '''
-    result = dict(stoptime._asdict())
-    result['call_time'] = datetime.utcfromtimestamp(seconds).replace(tzinfo=pytz.UTC)
+    result = dict(stoptime._asdict(), call_time=toutc(seconds), source=method or 'I')
     result['deviation'] = result['call_time'] - stoptime.datetime
-    result['source'] = method or 'I'
     return result
 
 
-def generate_calls(run: list, stops: list) -> list:
+def generate_calls(run: list, stops: list, mintime=None, maxtime=None) -> list:
     '''
     list of calls to be written
     Args:
         run: list generated from enumerate(positions)
         stoptimes: list of scheduled stoptimes for this trip
+        mintime: don't extrapolate back before this time
+        maxtime: don't extrapolate forward past this time
     '''
     obs_distances = [p.distance for p in run]
     obs_times = [p.time for p in run]
@@ -370,7 +353,9 @@ def generate_calls(run: list, stops: list) -> list:
     if si > 0 and len(back_mask) > 1:
         logging.debug('extrapolating backward. si = %s', si)
         try:
-            backward = extrapolate(back_mask, stops[si - EXTRAP_COUNT : si], 'S')
+            backward = extrapolate(back_mask, stops[si - EXTRAP_COUNT: si], 'S')
+            if mintime:
+                backward = [x for x in backward if x['call_time'] > mintime]
             calls = backward + calls
 
         except Exception as error:
@@ -380,7 +365,9 @@ def generate_calls(run: list, stops: list) -> list:
     if ei < len(stops) and len(forward_mask) > 1:
         logging.debug('extrapolating forward. ei = %s', ei)
         try:
-            forward = extrapolate(forward_mask, stops[ei : ei + EXTRAP_COUNT], 'E')
+            forward = extrapolate(forward_mask, stops[ei: ei + EXTRAP_COUNT], 'E')
+            if maxtime:
+                forward = [x for x in forward if x['call_time'] < maxtime]
             calls.extend(forward)
 
         except Exception as error:
@@ -404,19 +391,27 @@ def increasing(L):
 
 def track_vehicle(vehicle_id, query_args: dict, conn_kwargs: dict, calls_table, positions_table=None):
     positions_table = positions_table or 'positions'
-    runs_record = []
     query_args['vehicle'] = vehicle_id
 
     with psycopg2.connect(**conn_kwargs) as conn:
         logging.info('STARTING %s', vehicle_id)
         with conn.cursor(cursor_factory=NamedTupleCursor) as cursor:
-            runs = filter_positions(get_positions(cursor, positions_table, query_args))
+            rawruns = get_positions(cursor, positions_table, query_args)
+            # filter out short runs and ones with few stops
+            runs = filter_positions(rawruns)
+
+            if len(rawruns) > len(runs):
+                logging.debug('skipping %d short runs, query: %s', len(rawruns)-len(runs), query_args)
+
+            # Compute temporal bounds of each run.
+            starts = [None] + [toutc(run[0].time) for run in runs[1:]]
+            ends = [toutc(run[-1].time) for run in runs[:-1]] + [None]
 
             # Counter is just for logging.
             lenc = 0
 
             # each run will become a trip
-            for run in runs:
+            for run, start, end in zip(runs, starts, ends):
                 if not run:
                     continue
                 elif len(run) <= 2:
@@ -434,23 +429,8 @@ def track_vehicle(vehicle_id, query_args: dict, conn_kwargs: dict, calls_table, 
                     logging.warning('Missing stoptimes for %s', trip_id)
                     continue
 
-                if any(
-                    (r['start'] <= stoptimes[0].datetime <= r['end']) and
-                    (r['start'] <= stoptimes[-1].datetime <= r['end'])
-                    for r in runs_record
-                ):
-                    logging.warning('Skipping a nested run %s', trip_id)
-                    continue
-
                 # Generate (infer) calls.
-                calls = generate_calls(run, stoptimes)
-
-                # record calls for this run and check for nested runs (bad data)
-                imputed = [c for c in calls if c['source'] == 'I']
-                try:
-                    runs_record.append({'start': imputed[0]['call_time'], 'end': imputed[-1]['call_time']})
-                except IndexError:
-                    continue
+                calls = generate_calls(run, stoptimes, mintime=start, maxtime=end)
 
                 # update run_index sequence
                 cursor.execute("SELECT nextval('run_index')")
