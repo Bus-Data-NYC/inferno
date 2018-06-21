@@ -15,9 +15,11 @@
 FROM debian:stable
 
 ENV CALLSTABLE=calls \
-    POSITIONSTABLE=rt_vehicle_positions
+    POSITIONSTABLE=rt_vehicle_positions \
+    EPSG=3627 \
+    INFERNOFLAGS="--quiet --incomplete"
 
-RUN apt -y update; apt -y install gnupg2 wget ca-certificates rpl pwgen
+RUN apt-get -y update; apt-get -y install gnupg2 wget ca-certificates rpl pwgen
 RUN sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt/ stretch-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
 RUN wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
 
@@ -31,4 +33,5 @@ RUN echo "kernel.shmall=2097152" >> /etc/sysctl.conf
 
 COPY src/inferno.py inferno.py
 
-ENTRYPOINT python3 inferno.py ${DATE} --quiet --incomplete --calls-table ${CALLSTABLE} --positions-table ${POSITIONSTABLE}
+ENTRYPOINT python3 inferno.py ${DATE} ${INFERNOFLAGS} --epsg ${EPSG} \
+    --calls-table ${CALLSTABLE} --positions-table ${POSITIONSTABLE}
