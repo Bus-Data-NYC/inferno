@@ -333,6 +333,9 @@ def generate_calls(run: list, stops: list, mintime=None, maxtime=None) -> list:
     si = bisect_left(stop_positions, obs_distances[0])
     ei = bisect(stop_positions, obs_distances[-1])
 
+    logging.debug('min, max\t%s\t%s', mintime, maxtime)
+    logging.debug('this run\t%s\t%s', toutc(obs_times[0]), toutc(obs_times[-1]))
+
     if not stops[si:ei]:
         logging.debug('No calls because no stops between si (%s) and ei (%s)',
                       obs_distances[0], obs_distances[-1])
@@ -404,8 +407,8 @@ def track_vehicle(vehicle_id, query_args: dict, conn_kwargs: dict, calls_table, 
                 logging.debug('skipping %d short runs, query: %s', len(rawruns)-len(runs), query_args)
 
             # Compute temporal bounds of each run.
-            starts = [None] + [toutc(run[0].time) for run in runs[1:]]
-            ends = [toutc(run[-1].time) for run in runs[:-1]] + [None]
+            starts = [None] + [toutc(run[0].time) for run in runs[:-1]]
+            ends = [toutc(run[-1].time) for run in runs[1:]] + [None]
 
             # Counter is just for logging.
             lenc = 0
