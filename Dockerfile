@@ -23,14 +23,12 @@ RUN wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-k
 
 RUN apt-get update; apt-get install -y postgresql-client-10
 
-WORKDIR /
-
 RUN apt-get install --no-install-recommends -y python3-pip python3-numpy python3-psycopg2 && \
     pip3 install 'pytz>=2015.6'
 
 RUN echo "kernel.shmmax=543252480" >> /etc/sysctl.conf
 RUN echo "kernel.shmall=2097152" >> /etc/sysctl.conf
 
-COPY src/inferno.py ./src/inferno.py
+COPY src/inferno.py inferno.py
 
-ENTRYPOINT python3 ./src/inferno.py ${DATE} --quiet --incomplete --calls-table ${CALLSTABLE} --positions-table ${POSITIONSTABLE}
+ENTRYPOINT python3 inferno.py ${DATE} --quiet --incomplete --calls-table ${CALLSTABLE} --positions-table ${POSITIONSTABLE}
