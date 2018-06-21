@@ -478,10 +478,15 @@ def main():  # pragma: no cover
     parser.add_argument('--incomplete', action='store_true', help='Restart an incomplete date')
 
     args = parser.parse_args()
-
     psycopg2.extensions.register_type(DEC2FLOAT)
-
     conn_kwargs = connection_params()
+
+    if args.debug:
+        logger.setLevel(logging.DEBUG)
+        logging.debug('cli: %s', args)
+        logging.debug('connection: %s', conn_kwargs)
+    elif args.quiet:
+        logger.setLevel(logging.WARNING)
 
     if args.vehicle:
         vehicles = [args.vehicle]
@@ -505,15 +510,10 @@ def main():  # pragma: no cover
                        cycle([{'date': args.date, 'epsg': args.epsg}]),
                        cycle([conn_kwargs]),
                        cycle([args.calls_table]),
-                       cycle([args.positions_table]),
-                       )
-
-    if args.quiet:
-        logger.setLevel(logging.WARNING)
+                       cycle([args.positions_table])
+                      )
 
     if args.debug:
-        logging.info("debug mode")
-        logger.setLevel(logging.DEBUG)
         for i in itervehicles:
             track_vehicle(*i)
     else:
