@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from os import path
+from os import environ, path
 import logging
 from datetime import date, datetime
 from collections import namedtuple
@@ -36,10 +36,10 @@ def monotonically_increasing(L):
 class TestInferno(unittest.TestCase):
 
     dirname = path.dirname(__file__)
-    connstr = 'dbname=inferno'
+    connargs = {'dbname': 'inferno'}
     vehicle_id = '8500'
     service_date = '2017-05-20'
-
+    epsg = 3628
     Position = namedtuple('position', ['seq', 'distance', 'trip_id', 'time'])
     StopTime = namedtuple('stoptime', ['feed_index', 'stop_id', 'datetime', 'route_id',
                                        'direction_id', 'seq', 'distance', 'date'])
@@ -47,12 +47,14 @@ class TestInferno(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         psycopg2.extensions.register_type(inferno.DEC2FLOAT)
-        cls._connection = psycopg2.connect(cls.connstr, cursor_factory=NamedTupleCursor)
+        cls._connection = psycopg2.connect(cursor_factory=NamedTupleCursor, **cls.connargs)
         with cls._connection.cursor() as c:
             print('TRUNCATE TABLE calls')
             c.execute('TRUNCATE TABLE calls')
 
             c.execute("SELECT nextval('run_index')")
+
+        cls.query_args = {'vehicle': cls.vehicle_id, 'date': cls.service_date, 'epsg': cls.epsg}
 
         cls.sequence_data = [cls.Position(x[0], x[1], 'x', x[2]) for x in [
             (25, 6515.72, 100), (26, 6763.42, 110), (27, 6856.14, 120), (28, 6848.21, 130),
@@ -65,7 +67,7 @@ class TestInferno(unittest.TestCase):
     def test_calls(self):
         '''call generator'''
         with self._connection.cursor(cursor_factory=NamedTupleCursor) as cursor:
-            runs = inferno.get_positions(cursor, self.service_date, 'rt_vehicle_positions', self.vehicle_id)
+            runs = inferno.get_positions(cursor, 'rt_vehicle_positions', self.query_args)
 
             for run in inferno.filter_positions(runs):
                 trip = inferno.common([x.trip_id for x in run])
@@ -74,20 +76,24 @@ class TestInferno(unittest.TestCase):
                 self.assertGreater(len(stoptimes), 0)
                 self.assertEqual(len(stoptimes), len(set(x.stop_id for x in stoptimes)), 'No duplicate stoptimes')
 
-                calls = inferno.generate_calls(run, stoptimes)
-                self.assertGreater(len(calls), 0, 'non-zero calls')
+                try:
+                    calls = inferno.generate_calls(run, stoptimes)
+                    self.assertGreater(len(calls), 0, 'non-zero calls')
+                except AssertionError:
+                    print([r.seq for r in run])
+                    raise
 
                 self.assertTrue(monotonically_increasing([x['call_time']
                                                           for x in calls]), 'Monotonically increasing call times')
                 self.assertEqual(len(calls), len(set(c['call_time'] for c in calls)), 'No duplicate calls')
 
-                self.assertLessEqual(len(calls), len(stoptimes), 'Roughly same number of calls as stop times in (%s)' % trip)
+                self.assertLessEqual(len(calls), len(stoptimes),
+                                     'Roughly same number of calls as stop times in (%s)' % trip)
 
     def test_vehicle_query(self):
-        args = {'vehicle': self.vehicle_id, 'date': self.service_date}
 
         with self._connection.cursor() as curs:
-            curs.execute(inferno.VEHICLE_QUERY.format('rt_vehicle_positions'), args)
+            curs.execute(inferno.VEHICLE_QUERY.format('rt_vehicle_positions'), self.query_args)
             result = curs.fetchall()
 
         self.assertTrue(all(result[0]))
@@ -100,15 +106,10 @@ class TestInferno(unittest.TestCase):
 
     def test_mask(self):
         a = [1, 2, False, 3]
+
         def key(a, b):
             return bool(a and b)
         self.assertSequenceEqual([1, 2, 3], inferno.mask(a, key))
-
-        obj = [self.Position(x, x, '.', x) for x in (1, 2, 3)]
-        self.assertSequenceEqual(obj, inferno.mask(obj, inferno.compare_seq))
-
-        wrong = [self.Position(x, x, '.', x) for x in (1, 2, 0, 3)]
-        self.assertSequenceEqual(obj, inferno.mask(wrong, inferno.compare_seq))
 
         lis = [1, 2, 3, 2, 2, 2, 4, 5]
         result = inferno.mask(lis, lambda x, y: x >= y)
@@ -117,16 +118,6 @@ class TestInferno(unittest.TestCase):
     def test_compare_dist(self):
         result = inferno.mask(self.sequence_data, inferno.compare_dist)
         assert inferno.increasing([x.distance for x in result])
-
-    def compare_seq(self):
-        a, b = {'seq': 1}, {'seq': 2}
-
-        self.assertFalse(inferno.compare_seq(a, b))
-        self.assertTrue(inferno.compare_seq(b, a))
-        self.assertTrue(inferno.compare_seq(a, a))
-
-        result = inferno.mask(self.sequence_data, inferno.compare_seq)
-        assert inferno.increasing([x['seq'] for x in result])
 
     def test_increasing(self):
         a = [1, 2, 3]
@@ -143,16 +134,6 @@ class TestInferno(unittest.TestCase):
         nt = namedtuple('a', ['name'])
         a = [nt('foo'), nt('bar')]
         self.assertSequenceEqual(('foo', 'bar'), inferno.desc2fn(a))
-
-    def test_samerun(self):
-        a = self.Position(1, 1, 'x', 1)
-        b = self.Position(2, 2, 'x', 2)
-        c = self.Position(2, 3, 'z', 3)
-        d = self.Position(0, 4, 'x', 4)
-
-        self.assertTrue(inferno.samerun(a, b))
-        self.assertFalse(inferno.samerun(a, c))
-        self.assertFalse(inferno.samerun(a, d))
 
     def _stoptimes(self, trip, date):
         with self._connection.cursor() as cursor:
@@ -188,24 +169,31 @@ class TestInferno(unittest.TestCase):
     def test_get_positions(self):
         with self._connection.cursor() as cursor:
             # Check that imaginary vehicle returns nothing
-            runs = inferno.get_positions(cursor, self.service_date, 'rt_vehicle_positions', 'magic schoolbus')
+            args = {'date': self.service_date, 'vehicle': 'magic schoolbus', 'epsg': self.epsg}
+            runs = inferno.get_positions(cursor, 'rt_vehicle_positions', args)
             self.assertEqual(len(runs), 0)
 
-            runs = inferno.get_positions(cursor, self.service_date, 'rt_vehicle_positions', self.vehicle_id)
+            args['vehicle'] = self.vehicle_id
+            runs = inferno.get_positions(cursor, 'rt_vehicle_positions', args)
             self.assertIsInstance(runs, list)
 
         try:
-            self._run_tst(inferno.filter_positions(runs))
+            self._run_tst(runs)
         except AssertionError:
+            print(runs)
             raise AssertionError('Run test failed for', self.service_date, self.vehicle_id)
         try:
-            self._run_tst(inferno.filter_positions(runs))
+            self._run_tst(runs)
         except AssertionError:
             raise AssertionError('Run test failed for', self.service_date, '7149')
 
     def test_track_vehicle(self):
-        inferno.track_vehicle(self.vehicle_id, 'calls', self.service_date,
-                              self.connstr, positions_table='rt_vehicle_positions')
+        inferno.track_vehicle(self.vehicle_id,
+                              query_args={'date': self.service_date, 'epsg': self.epsg},
+                              calls_table='calls',
+                              conn_kwargs=self.connargs,
+                              positions_table='rt_vehicle_positions'
+                              )
 
     def test_call(self):
         dt1 = datetime(2017, 5, 30, 23, 46, 15, tzinfo=utc)
@@ -319,6 +307,10 @@ class TestInferno(unittest.TestCase):
         badrun = [self.Position(None, a, None, b) for a, b in enumerate(bad, start=1)]
         self.assertSequenceEqual(inferno.extrapolate(badrun, stoptimes, 'E'), [])
 
+    def test_params(self):
+        params = inferno.connection_params()
+        for p in ('PGUSER', 'PGHOST', 'PGPORT', 'PGPASSWORD', 'PGPASSFILE'):
+            self.assertEqual(environ.get(p), params.get(p.replace('PG', '').lower()))
 
 if __name__ == '__main__':
     unittest.main()

@@ -31,15 +31,19 @@ test: | clean-test load-test
 
 load-test:
 	psql inferno -f sql/calls.sql
-	psql inferno -f src/test_data/positions.sql
+	psql inferno -f src/test_data/schema.sql
+	psql inferno -c "\copy rt_vehicle_positions \
+		(timestamp,vehicle_id,latitude,longitude,trip_start_date,trip_id,stop_id,dist_along_route,dist_from_stop) \
+		FROM 'src/test_data/positions.csv' WITH (FORMAT CSV, HEADER TRUE)"
 	psql inferno -f src/test_data/trips.sql
 	psql inferno -f src/test_data/shape_geoms.sql
-	psql inferno -f src/test_data/stop_times.sql
+	psql inferno -c "\copy gtfs.stop_times \
+		(feed_index,trip_id,arrival_time,departure_time,stop_id,stop_sequence,pickup_type,drop_off_type,shape_dist_traveled) \
+		FROM 'src/test_data/stop_times.csv' WITH (FORMAT CSV, HEADER TRUE)"
 
 clean-test:
 	-psql inferno -c "drop table calls"
-	-psql inferno -c "truncate rt_vehicle_positions, gtfs_trips, gtfs_stop_times, \
-		gtfs_calendar, gtfs_feed_info, gtfs_agency, gtfs_shape_geoms cascade;"
+	-psql inferno -c 'drop schema gtfs cascade'
 
 init:
 	$(PSQL) -f sql/calls.sql
