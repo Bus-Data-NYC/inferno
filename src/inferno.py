@@ -228,8 +228,6 @@ def get_positions(cursor, positions_table, query_args):
             runs[-1].append(position)
             prev = position
 
-        position = cursor.fetchone()
-
     return runs
 
 
