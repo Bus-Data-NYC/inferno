@@ -1,0 +1,15 @@
+.git
+data
+htmlcov
+
+*.ipynb
+.ipynb_checkpoints
+
+.travis.yml
+*.md
+LICENSE
+*/__pycache__
+.coverage
+*.qgs
+*.qgs~
+*.csv

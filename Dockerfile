@@ -1,4 +1,4 @@
-# Copyright 2018 TransitCenter http://transitcenter.org
+# Copyright 2018, 2019 TransitCenter http://transitcenter.org
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,8 +14,8 @@
 
 FROM debian:stable
 
-ENV CALLSTABLE=calls \
-    POSITIONSTABLE=rt_vehicle_positions \
+ENV CALLS=calls \
+    POSITIONS=rt_vehicle_positions \
     EPSG=3627 \
     INFERNOFLAGS="--quiet --incomplete"
 
@@ -33,5 +33,4 @@ RUN echo "kernel.shmall=2097152" >> /etc/sysctl.conf
 
 COPY src/inferno.py inferno.py
 
-ENTRYPOINT python3 inferno.py ${DATE} ${INFERNOFLAGS} --epsg ${EPSG} \
-    --calls-table ${CALLSTABLE} --positions-table ${POSITIONSTABLE}
+ENTRYPOINT ./inferno.py ${INFERNOFLAGS} --epsg=${EPSG} --calls=${CALLS} --positions=${POSITIONS} ${DATE}

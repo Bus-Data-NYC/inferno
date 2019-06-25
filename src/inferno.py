@@ -1,4 +1,4 @@
-#!/user/bin/env python3.5
+#!/usr/bin/env python3
 
 # Copyright 2017-18 TransitCenter http://transitcenter.org
 
@@ -466,8 +466,8 @@ def main():  # pragma: no cover
     # connectionstring: str, table, date, vehicle=None
     parser = argparse.ArgumentParser()
     parser.add_argument('date', type=str)
-    parser.add_argument('--calls-table', type=str, default='calls')
-    parser.add_argument('--positions-table', type=str, default='positions')
+    parser.add_argument('--calls', type=str, default='calls')
+    parser.add_argument('--positions', type=str, default='positions')
     parser.add_argument('--vehicle', type=str)
     parser.add_argument('--epsg', type=int, default=4326,
                         help='projection in which to calculate distances')
