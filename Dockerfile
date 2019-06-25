@@ -23,10 +23,14 @@ RUN apt-get -y update; apt-get -y install gnupg2 wget ca-certificates rpl pwgen
 RUN sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt/ stretch-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
 RUN wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
 
-RUN apt-get update; apt-get install -y postgresql-client-10
-
-RUN apt-get install --no-install-recommends -y python3-pip python3-numpy python3-psycopg2 && \
-    pip3 install 'pytz>=2015.6'
+RUN apt-get -y update; \
+    apt-get install -y --no-install-recommends -y \
+    postgresql-client-10 \
+    python3-pip \
+    python3-numpy \
+    python3-psycopg2 \
+    && pip3 install 'pytz>=2015.6' \
+    && apt-get clean
 
 RUN echo "kernel.shmmax=543252480" >> /etc/sysctl.conf
 RUN echo "kernel.shmall=2097152" >> /etc/sysctl.conf
