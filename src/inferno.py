@@ -467,16 +467,17 @@ def main():  # pragma: no cover
     # connectionstring: str, table, date, vehicle=None
     parser = argparse.ArgumentParser()
     parser.add_argument('date', type=str)
-    parser.add_argument('--calls', type=str, default='calls')
-    parser.add_argument('--positions', type=str, default='positions')
+    parser.add_argument('--calls', type=str, default=os.environ.get('CALLS', 'calls'))
+    parser.add_argument('--positions', type=str, default=os.environ.get('POSITIONS', 'positions'))
     parser.add_argument('--vehicle', type=str)
-    parser.add_argument('--epsg', type=int, default=4326,
+    parser.add_argument('--epsg', type=int, default=int(os.environ.get('EPSG', 4326)),
                         help='projection in which to calculate distances')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--quiet', action='store_true')
     parser.add_argument('--incomplete', action='store_true', help='Restart an incomplete date')
 
     args = parser.parse_args()
+
     psycopg2.extensions.register_type(DEC2FLOAT)
     conn_kwargs = connection_params()
 

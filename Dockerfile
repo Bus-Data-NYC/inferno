@@ -14,27 +14,26 @@
 
 FROM debian:stable
 
-ENV CALLS=calls \
-    POSITIONS=rt_vehicle_positions \
-    EPSG=3627 \
-    INFERNOFLAGS="--quiet --incomplete"
+ENV CALLS calls
+ENV POSITIONS rt_vehicle_positions
+ENV EPSG 3627
 
-RUN apt-get -y update; apt-get -y install gnupg2 wget ca-certificates rpl pwgen
-RUN sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt/ stretch-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
-RUN wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
-
-RUN apt-get -y update; \
-    apt-get install -y --no-install-recommends -y \
-    postgresql-client-10 \
-    python3-pip \
-    python3-numpy \
-    python3-psycopg2 \
-    && pip3 install 'pytz>=2015.6' \
+RUN apt-get -y update && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        gnupg2 \
+        postgresql-client \
+        python3-pip \
+        python3-setuptools \
     && apt-get clean
 
 RUN echo "kernel.shmmax=543252480" >> /etc/sysctl.conf
 RUN echo "kernel.shmall=2097152" >> /etc/sysctl.conf
 
+COPY requirements.txt requirements.txt
+RUN python3 -m pip install -r requirements.txt
+
 COPY src/inferno.py inferno.py
 
-ENTRYPOINT ./inferno.py ${INFERNOFLAGS} --epsg=${EPSG} --calls=${CALLS} --positions=${POSITIONS} ${DATE}
+ENTRYPOINT ["./inferno.py", "--quiet", "--incomplete"]
+CMD ["2019-10-01"]
