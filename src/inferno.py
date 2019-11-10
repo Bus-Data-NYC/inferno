@@ -145,6 +145,7 @@ SELECT_STOPTIMES_PLAIN = """SELECT DISTINCT
     date %(date)s as date,
     route_id,
     direction_id,
+    stop_sequence,
     shape_dist_traveled distance
 FROM gtfs.trips
     LEFT JOIN gtfs.agency USING (feed_index)
@@ -492,13 +493,13 @@ def main():  # pragma: no cover
         with psycopg2.connect(**conn_kwargs) as conn:
             with conn.cursor() as cursor:
                 logging.info('Finding vehicles for %s', args.date)
-                cursor.execute(SELECT_VEHICLE.format(args.positions_table), (args.date,))
+                cursor.execute(SELECT_VEHICLE.format(args.positions), (args.date,))
                 vehicles = [x[0] for x in cursor.fetchall()]
 
                 if args.incomplete:
                     logging.info('Removing already-called vehicles')
                     cursor.execute(SELECT_CALLED_VEHICLES, (args.date,))
-                    called = set([x[0] for x in cursor.fetchall()])
+                    called = set(x[0] for x in cursor.fetchall())
                     vehicles = set(vehicles).difference(called)
                     logging.info('Removed %s', len(called))
 
@@ -507,9 +508,9 @@ def main():  # pragma: no cover
     itervehicles = zip(vehicles,
                        cycle([{'date': args.date, 'epsg': args.epsg}]),
                        cycle([conn_kwargs]),
-                       cycle([args.calls_table]),
-                       cycle([args.positions_table])
-                      )
+                       cycle([args.calls]),
+                       cycle([args.positions])
+                       )
 
     if args.debug:
         for i in itervehicles:
