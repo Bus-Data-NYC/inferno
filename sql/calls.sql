@@ -13,22 +13,24 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+BEGIN;
+
+CREATE SCHEMA IF NOT EXISTS inferno;
 
 -- generate the timestampz for a gtfs schedule date and time
-CREATE OR REPLACE FUNCTION wall_timez(d date, t interval, zone text)
+CREATE OR REPLACE FUNCTION inferno.wall_timez(d date, t interval, zone text)
     RETURNS timestamp with time zone AS $$
         SELECT ($1 + '12:00'::time)::timestamp without time zone at time zone $3 - interval '12 HOURS' + $2
     $$
-LANGUAGE SQL IMMUTABLE;
+LANGUAGE SQL IMMUTABLE PARALLEL SAFE STRICT;
 
-CREATE INDEX pos_vid ON rt_vehicle_positions (vehicle_id);
-CREATE INDEX pos_trip_id ON rt_vehicle_positions (trip_id);
-CREATE INDEX pos_vid_date ON rt_vehicle_positions (trip_start_date, vehicle_id);
+CREATE INDEX IF NOT EXISTS pos_vid ON rt.vehicle_positions (vehicle_id);
+CREATE INDEX IF NOT EXISTS pos_trip_id ON rt.vehicle_positions (trip_id);
+CREATE INDEX IF NOT EXISTS pos_vid_date ON rt.vehicle_positions (trip_start_date, vehicle_id);
 
-CREATE OR REPLACE FUNCTION safe_locate
-  (route geometry, point geometry, start numeric, finish numeric, length numeric)
+CREATE OR REPLACE FUNCTION inferno.safe_locate (route geometry, point geometry, start numeric, finish numeric, length numeric)
   RETURNS numeric AS $$
-    -- Multiply the fractional distance also the substring by the substring,
+    -- Multiply the fractional distance along the substring by the substring,
     -- then add the start distance
     SELECT GREATEST(0, start) + ST_LineLocatePoint(
       ST_LineSubstring(route, GREATEST(0, start / length), LEAST(1, finish / length)),
@@ -37,10 +39,10 @@ CREATE OR REPLACE FUNCTION safe_locate
       -- The absolute distance between start and finish
       LEAST(length, finish) - GREATEST(0, start)
     );
-  $$ LANGUAGE SQL;
+  $$ LANGUAGE SQL PARALLEL SAFE IMMUTABLE STRICT;
 
 -- call time is a timestampz, will be passed into the db as a UTC datetime
-CREATE TABLE IF NOT EXISTS calls (
+CREATE TABLE IF NOT EXISTS inferno.calls (
   trip_id text not null,
   run_index bigint,
   deviation interval,
@@ -53,6 +55,8 @@ CREATE TABLE IF NOT EXISTS calls (
   source char(1),
   CONSTRAINT calls_pkey PRIMARY KEY (vehicle_id, call_time)
 );
-CREATE SEQUENCE IF NOT EXISTS run_index CACHE 3 NO CYCLE OWNED BY calls.run_index;
+CREATE SEQUENCE IF NOT EXISTS inferno.run_index CACHE 3 NO CYCLE OWNED BY inferno.calls.run_index;
 
-CREATE INDEX calls_run ON calls (run_index);
+CREATE INDEX IF NOT EXISTS calls_run ON inferno.calls (run_index);
+
+COMMIT;

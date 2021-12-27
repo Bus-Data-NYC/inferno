@@ -14,10 +14,6 @@
 
 FROM debian:stable
 
-ENV CALLS calls
-ENV POSITIONS rt_vehicle_positions
-ENV EPSG 3627
-
 RUN apt-get -y update && \
     apt-get install -y --no-install-recommends \
         ca-certificates \
@@ -33,7 +29,11 @@ RUN echo "kernel.shmall=2097152" >> /etc/sysctl.conf
 COPY requirements.txt requirements.txt
 RUN python3 -m pip install -r requirements.txt
 
-COPY src/inferno.py inferno.py
+COPY src/inferno.py src/inferno.py
+COPY src/run.sh src/run.sh
 
-ENTRYPOINT ["./inferno.py", "--quiet", "--incomplete"]
-CMD ["2019-10-01"]
+ENV CALLS inferno.calls
+ENV POSITIONS rt.vehicle_positions
+ENV EPSG 3627
+
+ENTRYPOINT ["./src/run.sh"]

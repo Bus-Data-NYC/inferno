@@ -1,6 +1,7 @@
-DROP TABLE IF EXISTS rt_vehicle_positions;
 
-CREATE TABLE rt_vehicle_positions (
+CREATE SCHEMA IF NOT EXISTS rt;
+
+CREATE TABLE IF NOT EXISTS rt.vehicle_positions (
     timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
     vehicle_id TEXT NOT NULL,
     latitude NUMERIC(8, 6) NOT NULL,
@@ -13,12 +14,12 @@ CREATE TABLE rt_vehicle_positions (
     stop_id TEXT,
     dist_along_route NUMERIC(8, 2),
     dist_from_stop NUMERIC(8, 2),
-    CONSTRAINT position_time_bus PRIMARY KEY (timestamp, vehicle_id)
+    CONSTRAINT position_time_bus_pk PRIMARY KEY (timestamp, vehicle_id)
 );
 
-CREATE SCHEMA gtfs;
+CREATE SCHEMA IF NOT EXISTS gtfs;
 
-CREATE TABLE gtfs.feed_info (
+CREATE TABLE IF NOT EXISTS gtfs.feed_info (
   feed_index serial PRIMARY KEY, -- tracks uploads, avoids key collisions
   feed_publisher_name text default null,
   feed_publisher_url text default null,
@@ -32,7 +33,7 @@ CREATE TABLE gtfs.feed_info (
   feed_download_date date,
   feed_file text
 );
-CREATE TABLE gtfs.agency (
+CREATE TABLE IF NOT EXISTS gtfs.agency (
   feed_index integer REFERENCES gtfs.feed_info (feed_index),
   agency_id text default '',
   agency_name text default null,
@@ -47,7 +48,7 @@ CREATE TABLE gtfs.agency (
   CONSTRAINT gtfs_agency_pkey PRIMARY KEY (feed_index, agency_id)
 );
 
-CREATE TABLE gtfs.calendar (
+CREATE TABLE IF NOT EXISTS gtfs.calendar (
   feed_index integer not null,
   service_id text,
   monday int not null,
@@ -63,9 +64,9 @@ CREATE TABLE gtfs.calendar (
   CONSTRAINT gtfs_calendar_feed_fkey FOREIGN KEY (feed_index)
     REFERENCES gtfs.feed_info (feed_index) ON DELETE CASCADE
 );
-CREATE INDEX gtfs_calendar_service_id ON gtfs.calendar (service_id);
+CREATE INDEX IF NOT EXISTS gtfs_calendar_service_id ON gtfs.calendar (service_id);
 
-CREATE TABLE gtfs.trips (
+CREATE TABLE IF NOT EXISTS gtfs.trips (
   feed_index int not null,
   route_id text not null,
   service_id text not null,
@@ -82,10 +83,10 @@ CREATE TABLE gtfs.trips (
     REFERENCES gtfs.feed_info (feed_index) ON DELETE CASCADE
 );
 
-CREATE INDEX gtfs_trips_trip_id ON gtfs.trips (trip_id);
-CREATE INDEX gtfs_trips_service_id ON gtfs.trips (feed_index, service_id);
+CREATE INDEX IF NOT EXISTS gtfs_trips_trip_id ON gtfs.trips (trip_id);
+CREATE INDEX IF NOT EXISTS gtfs_trips_service_id ON gtfs.trips (feed_index, service_id);
 
-CREATE TABLE gtfs.stop_times (
+CREATE TABLE IF NOT EXISTS gtfs.stop_times (
   feed_index int not null,
   trip_id text not null,
   arrival_time interval CHECK (arrival_time::interval = arrival_time::interval),
@@ -96,14 +97,13 @@ CREATE TABLE gtfs.stop_times (
   pickup_type int,
   drop_off_type int,
   shape_dist_traveled numeric(10, 2),
-  timepoint int,
   CONSTRAINT gtfs_stop_times_pkey PRIMARY KEY (feed_index, trip_id, stop_sequence),
   CONSTRAINT gtfs_stop_times_feed_fkey FOREIGN KEY (feed_index)
     REFERENCES gtfs.feed_info (feed_index) ON DELETE CASCADE
 );
 CREATE INDEX gtfs_stop_times_key ON gtfs.stop_times (feed_index, trip_id, stop_id);
 
-CREATE TABLE gtfs.stops (
+CREATE TABLE IF NOT EXISTS gtfs.stops (
   feed_index int not null,
   stop_id text,
   stop_name text default null,
@@ -124,15 +124,14 @@ CREATE TABLE gtfs.stops (
   parent_station text default null,
   wheelchair_boarding integer default null,
   wheelchair_accessible integer default null,
+  the_geom Geometry(point, 4326),
   CONSTRAINT gtfs_stops_pkey PRIMARY KEY (feed_index, stop_id)
 );
-SELECT AddGeometryColumn('gtfs', 'stops', 'the_geom', 4326, 'POINT', 2);
 
-CREATE TABLE gtfs.shape_geoms (
+CREATE TABLE IF NOT EXISTS gtfs.shape_geoms (
   feed_index int not null,
   shape_id text not null,
   length numeric(12, 2) not null,
+  the_geom Geometry(LineString, 4326),
   CONSTRAINT gtfs_shape_geom_pkey PRIMARY KEY (feed_index, shape_id)
 );
--- Add the_geom column to the gtfs.shape_geoms table - a 2D linestring geometry
-SELECT AddGeometryColumn('gtfs', 'shape_geoms', 'the_geom', 4326, 'LINESTRING', 2);

@@ -9,3 +9,6 @@
 *.qgs~
 *.ipynb
 .ipynb_checkpoints
+.env
+_submit.sh
+notes.txt
