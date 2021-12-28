@@ -472,7 +472,11 @@ def track_vehicle(
                 stoptimes = get_stoptimes(cursor, trip_id, query_args["date"])
 
                 if any(x.distance is None for x in stoptimes):
-                    logging.warning("Missing stoptimes for %s", trip_id)
+                    logging.warning(
+                        "Missing stoptimes trip_id= %s, date= %s",
+                        trip_id,
+                        query_args["date"],
+                    )
                     continue
 
                 # Generate (infer) calls.
