@@ -494,6 +494,13 @@ def track_vehicle(
             logging.info("COMMIT vehicle= %s, calls= %s", vehicle_id, lenc)
 
 
+def get_cpus():
+    try:
+        return len(os.sched_getaffinity(0))
+    except AttributeError:
+        return os.cpu_count()
+
+
 def connection_params():
     """Check the environment for postgresql connection parameters"""
     pg = {
@@ -529,11 +536,19 @@ def main():  # pragma: no cover
         default=int(os.environ.get("EPSG", 4326)),
         help="projection in which to calculate distances",
     )
-    parser.add_argument("--debug", action="store_true")
+    parser.add_argument(
+        "--debug", action="store_true", help="Run verbosely and without parallelism"
+    )
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument(
         "--incomplete", action="store_true", help="Restart an incomplete date"
+    )
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        help="Number of jobs to run. Defaults to %s" % get_cpus(),
+        default=get_cpus(),
     )
 
     args = parser.parse_args()
@@ -575,11 +590,11 @@ def main():  # pragma: no cover
         cycle([args.positions]),
     )
 
-    if args.debug:
+    if args.debug or args.jobs == 1:
         for i in itervehicles:
             track_vehicle(*i)
     else:
-        with Pool(os.cpu_count()) as pool:
+        with Pool(args.jobs) as pool:
             pool.starmap(track_vehicle, itervehicles)
 
     logging.info("completed %s", args.date)
