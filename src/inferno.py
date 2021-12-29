@@ -124,7 +124,7 @@ SELECT_STOPTIMES = """SELECT
     route_id,
     direction_id,
     stop_sequence AS seq,
-    ST_LineLocatePoint(route.the_geom, ST_Transform(stops.the_geom, 4326), %(epsg)s)) * ST_Length(route.the_geom) distance
+    ST_LineLocatePoint(route.the_geom, ST_Transform(stops.the_geom, %(epsg)s)) * ST_Length(route.the_geom) distance
 FROM gtfs.trips
     LEFT JOIN gtfs.agency USING (feed_index)
     LEFT JOIN gtfs.stop_times USING (feed_index, trip_id)
@@ -150,7 +150,7 @@ SELECT_STOPTIMES_PLAIN = """SELECT DISTINCT
     route_id,
     direction_id,
     stop_sequence,
-    ST_LineLocatePoint(route.the_geom, ST_Transform(stops.the_geom, 4326), %(epsg)s)) * ST_Length(route.the_geom) distance
+    ST_LineLocatePoint(route.the_geom, ST_Transform(stops.the_geom, %(epsg)s)) * ST_Length(route.the_geom) distance
 FROM gtfs.trips
     LEFT JOIN gtfs.agency USING (feed_index)
     LEFT JOIN gtfs.stop_times USING (feed_index, trip_id)

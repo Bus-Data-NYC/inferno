@@ -30,6 +30,8 @@ import inferno
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+EPSG = 3627
+
 
 def monotonically_increasing(L):
     return all(x < y for x, y in zip(L, L[1:]))
@@ -99,7 +101,7 @@ class TestInferno(unittest.TestCase):
             for run in inferno.filter_positions(runs):
                 trip = inferno.common([x.trip_id for x in run])
 
-                stoptimes = inferno.get_stoptimes(cursor, trip, self.service_date)
+                stoptimes = inferno.get_stoptimes(cursor, trip, self.service_date, EPSG)
                 self.assertGreater(len(stoptimes), 0)
                 self.assertEqual(
                     len(stoptimes),
@@ -178,9 +180,9 @@ class TestInferno(unittest.TestCase):
         a = [nt("foo"), nt("bar")]
         self.assertSequenceEqual(("foo", "bar"), inferno.desc2fn(a))
 
-    def _stoptimes(self, trip, date):
+    def _stoptimes(self, trip):
         with self._connection.cursor() as cursor:
-            stoptimes = inferno.get_stoptimes(cursor, trip, date)
+            stoptimes = inferno.get_stoptimes(cursor, trip, self.service_date, EPSG)
 
         self.assertTrue(
             not any([x.seq is None for x in stoptimes]), "No None sequences"
@@ -204,9 +206,11 @@ class TestInferno(unittest.TestCase):
             "Monotonically increasing sequence",
         )
 
-    def test_get_stoptimes(self):
-        self._stoptimes("UP_B7-Weekday-SDon-119500_B74_605", self.service_date)
-        self._stoptimes("QV_B7-Saturday-038500_MISC_120", self.service_date)
+    def test_get_stoptimes1(self):
+        self._stoptimes("UP_B7-Weekday-SDon-119500_B74_605")
+
+    def test_get_stoptimes2(self):
+        self._stoptimes("QV_B7-Saturday-038500_MISC_120")
 
     def _run_tst(self, runs):
         for run in runs:
@@ -328,7 +332,11 @@ class TestInferno(unittest.TestCase):
         )
 
     def test_queries(self):
-        data = {"trip": "QV_B7-Weekday-SDon-145500_MISC_320", "date": "2017-05-20"}
+        data = {
+            "trip": "QV_B7-Weekday-SDon-145500_MISC_320",
+            "date": "2017-05-20",
+            "epsg": EPSG,
+        }
 
         with self._connection.cursor(cursor_factory=NamedTupleCursor) as cursor:
             cursor.execute(inferno.SELECT_STOPTIMES, data)

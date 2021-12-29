@@ -48,6 +48,8 @@ jobs:
 
       - name: Infer calls for a test day
         run: make calls-day-2017-05-20
+        env:
+          INFERNOFLAGS: --epsg=3627
 
       - name: Run python tests
         run: make test
