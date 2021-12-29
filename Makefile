@@ -37,6 +37,7 @@ test: ; coverage run src/test.py
 
 load-test:
 	psql -f src/test_data/schema.sql
+	psql -c "\copy gtfs.feed_info (feed_index, feed_start_date, feed_end_date) from 'src/test_data/feed_info.csv' (format csv, header on)"
 	psql -c "\copy rt.vehicle_positions \
 		(timestamp, vehicle_id, latitude, longitude, trip_start_date, trip_id, stop_id, dist_along_route, dist_from_stop) \
 		from 'src/test_data/positions.csv' (format csv, header on)"

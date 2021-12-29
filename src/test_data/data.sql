@@ -1,9 +1,3 @@
-INSERT INTO gtfs.feed_info ("feed_index","feed_start_date","feed_end_date")
-VALUES
-    ( 7, '2017-04-08', '2017-07-01'),
-    (23, '2017-04-08', '2017-07-01'),
-    (65,E'2018-03-31',E'2018-06-30');
-
 INSERT INTO gtfs.agency ("feed_index","agency_timezone")
 VALUES (7, 'America/New_York'),
     (23, 'America/New_York'),
