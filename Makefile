@@ -40,11 +40,10 @@ load-test:
 	psql -c "\copy rt.vehicle_positions \
 		(timestamp, vehicle_id, latitude, longitude, trip_start_date, trip_id, stop_id, dist_along_route, dist_from_stop) \
 		from 'src/test_data/positions.csv' (format csv, header on)"
-	psql -f src/test_data/trips.sql
-	psql -f src/test_data/shape_geoms.sql
 	psql -c "\copy gtfs.stop_times \
 		(feed_index, trip_id, arrival_time, departure_time, stop_id, stop_sequence, pickup_type, drop_off_type, shape_dist_traveled) \
 		from 'src/test_data/stop_times.csv' (format csv, header on)"
+	psql -f src/test_data/data.sql
 
 init:
 	$(psql) -f sql/calls.sql
