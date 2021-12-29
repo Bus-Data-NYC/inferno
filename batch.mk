@@ -12,7 +12,7 @@ ifdef QUEUE
 submit-job:
 	aws batch submit-job --job-name calls-$(YEAR)-$(MONTH) --job-queue $(QUEUE) \
 		--job-definition infer \
-		--container-overrides "environment=[{name=YEAR,value=$(YEAR)},{name=MONTH,value=$(MONTH)},{name=INFERNOFLAGS,value=--incomplete --quiet --epsg=3628}]" \
+		--container-overrides "environment=[{name=YEAR,value=$(YEAR)},{name=MONTH,value=$(MONTH)},{name=INFERNOFLAGS,value=--jobs=4 --quiet --epsg=3627}]" \
 		--array-properties size=31
 
 endif
