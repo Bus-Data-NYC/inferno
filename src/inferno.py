@@ -124,11 +124,13 @@ SELECT_STOPTIMES = """SELECT
     route_id,
     direction_id,
     stop_sequence AS seq,
-    shape_dist_traveled distance
+    ST_LineLocatePoint(route.the_geom, ST_Transform(stops.the_geom, 4326), %(epsg)s)) * ST_Length(route.the_geom) distance
 FROM gtfs.trips
     LEFT JOIN gtfs.agency USING (feed_index)
     LEFT JOIN gtfs.stop_times USING (feed_index, trip_id)
     LEFT JOIN gtfs.stops USING (feed_index, stop_id)
+    LEFT JOIN gtfs.shape_geoms shape USING (feed_index, shape_id),
+    ST_Transform(shape.the_geom, %(epsg)s) route (the_geom)
 WHERE trip_id = %(trip)s
     AND feed_index = (
         SELECT MAX(feed_index)
@@ -148,11 +150,13 @@ SELECT_STOPTIMES_PLAIN = """SELECT DISTINCT
     route_id,
     direction_id,
     stop_sequence,
-    shape_dist_traveled distance
+    ST_LineLocatePoint(route.the_geom, ST_Transform(stops.the_geom, 4326), %(epsg)s)) * ST_Length(route.the_geom) distance
 FROM gtfs.trips
     LEFT JOIN gtfs.agency USING (feed_index)
     LEFT JOIN gtfs.stop_times USING (feed_index, trip_id)
     LEFT JOIN gtfs.stops USING (feed_index, stop_id)
+    LEFT JOIN gtfs.shape_geoms shape USING (feed_index, shape_id),
+    ST_Transform(shape.the_geom, %(epsg)s) route (the_geom)
 WHERE trip_id = %(trip)s
 ORDER BY stop_sequence ASC;
 """
@@ -242,9 +246,9 @@ def filter_positions(runs):
     return [run for run in runs if len(run) > 2 and len(set(r.seq for r in run)) > 1]
 
 
-def get_stoptimes(cursor, tripid, date):
+def get_stoptimes(cursor, tripid, date, epsg):
     logging.debug("Fetching stoptimes for %s", tripid)
-    fields = {"trip": tripid, "date": date}
+    fields = {"trip": tripid, "date": date, "epsg": epsg}
 
     cursor.execute(SELECT_STOPTIMES, fields)
 
@@ -469,7 +473,9 @@ def track_vehicle(
                 trip_id = common([x.trip_id for x in run])
 
                 # Get the scheduled list of stops for this trip.
-                stoptimes = get_stoptimes(cursor, trip_id, query_args["date"])
+                stoptimes = get_stoptimes(
+                    cursor, trip_id, query_args["date"], query_args["epsg"]
+                )
 
                 if any(x.distance is None for x in stoptimes):
                     logging.warning(
